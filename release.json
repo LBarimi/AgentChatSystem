@@ -1,0 +1,18 @@
+{
+  "name": "AgentChatSystem",
+  "version": "1.0.0",
+  "license": "MIT",
+  "platform": "Windows",
+  "python": ">=3.10",
+  "entrypoint": "bin/start.cmd",
+  "includes": [
+    "source",
+    "zipapp",
+    "launchers",
+    "default settings",
+    "documentation",
+    "project license",
+    "third-party license notices"
+  ],
+  "runtime_data_included": false
+}

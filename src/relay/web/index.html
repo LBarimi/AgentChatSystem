@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f7fb">
+  <title>AgentChatSystem — 작업실</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/i18n.js" defer></script>
+  <script src="/app.js" defer></script>
+  <script src="/board.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="rail" id="channels-panel" aria-label="워크스페이스" data-i18n-aria-label="workspace">
+      <div class="rail-header">
+      <a class="brand" href="/" aria-label="AgentChatSystem 홈" data-i18n-aria-label="home">
+        <span class="brand-mark"><svg class="icon"><use href="/vendor/icons.svg#arrow-left-right"></use></svg></span>
+        <span class="brand-name">AgentChatSystem</span>
+      </a>
+      <button class="button icon-button close-channels" id="close-channels" type="button" aria-label="채널 목록 닫기" data-i18n-aria-label="closeChannels"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button>
+      </div>
+      <nav class="room-nav" aria-label="채팅방" data-i18n-aria-label="chatRoom">
+        <div class="nav-heading"><h2 data-i18n="channels">채널</h2>
+          <button class="nav-add" id="add-channel" type="button" title="채널 추가" data-i18n-title="addChannel" aria-label="채널 추가" data-i18n-aria-label="addChannel" disabled><svg class="icon"><use href="/vendor/icons.svg#plus"></use></svg></button>
+        </div>
+        <div class="channel-list" id="channel-list"></div>
+      </nav>
+      <div class="rail-footer">
+        <label class="rail-setting" for="theme"><span data-i18n="theme">테마</span>
+          <select id="theme"><option value="system" data-i18n="themeSystem">시스템</option><option value="light" data-i18n="themeLight">라이트</option><option value="dark" data-i18n="themeDark">다크</option><option value="graphite" data-i18n="themeGraphite">그래파이트</option><option value="ocean" data-i18n="themeOcean">오션</option><option value="sand" data-i18n="themeSand">샌드</option><option value="plum" data-i18n="themePlum">플럼</option></select>
+        </label>
+        <label class="rail-setting" for="language"><span data-i18n="language">언어</span>
+          <select id="language" disabled>
+            <option value="ko" lang="ko">한국어</option>
+            <option value="ja" lang="ja">日本語</option>
+            <option value="en" lang="en">English</option>
+            <option value="zh-CN" lang="zh-CN">简体中文</option>
+            <option value="zh-TW" lang="zh-TW">繁體中文</option>
+            <option value="ru" lang="ru">Русский</option>
+            <option value="de" lang="de">Deutsch</option>
+          </select>
+        </label>
+        <p class="form-error settings-error" id="language-error" role="alert" hidden></p>
+      </div>
+    </aside>
+
+    <main class="room" aria-labelledby="chat-title">
+      <header class="room-header">
+        <div class="room-title">
+          <button class="button icon-button channels-toggle" id="channels-toggle" type="button" aria-controls="channels-panel" aria-expanded="false" aria-label="채널 목록" data-i18n-aria-label="channelList"><svg class="icon"><use href="/vendor/icons.svg#hash"></use></svg></button>
+          <span class="channel-icon"><svg class="icon"><use href="/vendor/icons.svg#hash"></use></svg></span>
+          <div><h1 id="chat-title" tabindex="-1" data-i18n="general">작업실</h1><p id="room-state" data-i18n="connecting">연결 중</p></div>
+        </div>
+        <div class="header-actions">
+          <span class="connection" id="connection" role="status"><i></i><span data-i18n="checkingConnection">연결 확인 중</span></span>
+          <button class="button board-toggle" id="board-toggle" type="button" aria-pressed="false" aria-controls="board-view" disabled><svg class="icon"><use href="/vendor/icons.svg#message-square"></use></svg><span id="board-toggle-label" data-i18n="board">게시판</span></button>
+          <button class="button folders-toggle" id="show-folders" type="button" disabled>
+            <svg class="icon"><use href="/vendor/icons.svg#link"></use></svg><span data-i18n="channelFolder">채널 폴더</span>
+          </button>
+          <button class="button danger" id="clear-chat" type="button" disabled data-i18n="clearChat">채팅 비우기</button>
+          <button class="button icon-button roster-toggle" id="roster-toggle" type="button" aria-controls="agents-panel" aria-expanded="false" title="참가자 보기" data-i18n-title="showParticipants">
+            <svg class="icon"><use href="/vendor/icons.svg#users"></use></svg><span class="sr-only" data-i18n="participants">참가자</span>
+          </button>
+        </div>
+      </header>
+
+      <div class="scroll-region" id="scroll-region">
+        <div class="empty" id="empty">
+          <div class="relay-graphic" aria-hidden="true">
+            <span class="graphic-end graphic-codex"><svg class="icon"><use href="/vendor/icons.svg#terminal"></use></svg></span>
+            <span class="graphic-link"></span>
+            <span class="graphic-center"><svg class="icon"><use href="/vendor/icons.svg#arrow-left-right"></use></svg></span>
+            <span class="graphic-link"></span>
+            <span class="graphic-end graphic-claude"><svg class="icon"><use href="/vendor/icons.svg#bot"></use></svg></span>
+          </div>
+          <h2 data-i18n="emptyTitle">어떤 작업을 함께 할까요?</h2>
+          <p data-i18n="emptyHint">에이전트를 고르거나 모두에게 메시지를 보내세요.</p>
+        </div>
+        <p class="history-limit" id="history-limit" hidden></p>
+        <ol class="timeline" id="messages" aria-label="대화 기록" data-i18n-aria-label="history"></ol>
+      </div>
+
+      <div class="composer-region">
+        <form class="composer" id="composer">
+          <label for="body" class="sr-only" data-i18n="taskMessage">작업 메시지</label>
+          <textarea id="body" placeholder="에이전트에게 보낼 작업을 입력하세요" data-i18n-placeholder="taskPlaceholder" maxlength="10000" rows="3"></textarea>
+          <ul class="chat-file-list" id="chat-file-list" aria-label="첨부할 파일" data-i18n-aria-label="attachments" hidden></ul>
+          <input id="chat-file-input" type="file" accept=".md,.png,image/png" multiple hidden>
+          <div class="composer-bar">
+            <div class="composer-fields">
+              <button class="button attach-button" id="chat-attach" type="button" title="MD 또는 PNG 파일 첨부" data-i18n-title="attachTitle" disabled><svg class="icon"><use href="/vendor/icons.svg#link"></use></svg><span data-i18n="attach">첨부</span></button>
+              <label class="select-field"><span data-i18n="recipient">보낼 대상</span><select id="recipient" required aria-label="보낼 대상" data-i18n-aria-label="recipient"></select></label>
+            </div>
+            <button class="button primary send" id="send" type="submit" disabled><span data-i18n="send">보내기</span><svg class="icon"><use href="/vendor/icons.svg#send"></use></svg></button>
+          </div>
+        </form>
+        <p class="composer-note" id="composer-note"><kbd>Enter</kbd><span data-i18n="send">전송</span><span>·</span><kbd>Shift</kbd><span>+</span><kbd>Enter</kbd><span data-i18n="lineBreak">줄바꿈</span></p>
+        <p class="form-error" id="form-error" role="alert" hidden></p>
+      </div>
+      <section class="board-view" id="board-view" aria-label="게시판" data-i18n-aria-label="board" hidden>
+        <div class="board-content">
+          <div class="board-actions">
+            <button class="button secondary" id="board-back" type="button" hidden data-i18n="boardList">목록</button>
+            <button class="button danger" id="board-delete" type="button" hidden data-i18n="deletePost">글 삭제</button>
+            <button class="button primary" id="board-write" type="button"><svg class="icon"><use href="/vendor/icons.svg#plus"></use></svg><span data-i18n="writePost">글쓰기</span></button>
+          </div>
+          <p class="board-status" id="board-status" role="status" hidden></p>
+          <ol class="board-list" id="board-list"></ol>
+          <article class="board-post" id="board-post" hidden></article>
+          <nav class="board-pages" id="board-pages" aria-label="게시글 페이지" data-i18n-aria-label="boardPages" hidden>
+            <button class="button secondary" id="board-newer" type="button" hidden data-i18n="newerPosts">최근 글</button>
+            <button class="button secondary" id="board-older" type="button" hidden data-i18n="olderPosts">이전 글</button>
+          </nav>
+        </div>
+      </section>
+    </main>
+
+    <aside class="agents" id="agents-panel" aria-labelledby="agents-title">
+      <div class="agents-header">
+        <div><h2 id="agents-title"><span data-i18n="participants">참가자</span> <span id="agent-count">0</span></h2><p id="agent-summary" data-i18n="connecting">연결 중</p></div>
+        <button class="button icon-button close-agents" id="close-agents" type="button" title="참가자 닫기" data-i18n-title="closeParticipants"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg><span class="sr-only" data-i18n="closeParticipants">참가자 닫기</span></button>
+      </div>
+      <button class="button add-agent" id="add-agent" type="button" disabled><svg class="icon"><use href="/vendor/icons.svg#plus"></use></svg><span data-i18n="addAgent">에이전트 추가</span></button>
+      <div class="roster" id="roster"></div>
+    </aside>
+  </div>
+
+  <dialog id="clear-chat-dialog" aria-labelledby="clear-chat-title">
+    <form class="dialog-body" id="clear-chat-form">
+      <header><h2 id="clear-chat-title" data-i18n="clearChat">채팅 비우기</h2></header>
+      <section>
+        <strong id="clear-chat-name"></strong>
+        <p data-i18n="clearChatConfirm">이 채널의 대화와 첨부 파일을 삭제합니다. AI의 미답변 메시지와 재개 대기 항목도 함께 비워집니다.</p>
+        <p class="form-error" id="clear-chat-error" role="alert" hidden></p>
+      </section>
+      <footer><button class="button secondary" type="button" data-close="clear-chat-dialog" autofocus data-i18n="cancel">취소</button><button class="button danger" id="clear-chat-confirm" type="submit" data-i18n="clear">비우기</button></footer>
+    </form>
+  </dialog>
+  <dialog id="board-delete-dialog" aria-labelledby="board-delete-title">
+    <form class="dialog-body" id="board-delete-form">
+      <header><h2 id="board-delete-title" data-i18n="deletePostTitle">게시글 삭제</h2></header>
+      <section>
+        <strong id="board-delete-name"></strong>
+        <p data-i18n="deletePostConfirm">게시글과 첨부 이미지를 삭제하고, 이 글의 지침을 제외하도록 AI에 알립니다.</p>
+        <p class="form-error" id="board-delete-error" role="alert" hidden></p>
+      </section>
+      <footer><button class="button secondary" type="button" data-close="board-delete-dialog" autofocus data-i18n="cancel">취소</button><button class="button danger" id="board-delete-confirm" type="submit" data-i18n="delete">삭제</button></footer>
+    </form>
+  </dialog>
+  <dialog class="board-write-dialog" id="board-write-dialog" aria-labelledby="board-write-title">
+    <form class="dialog-body" id="board-form">
+      <header><h2 id="board-write-title" data-i18n="writePostTitle">게시글 작성</h2><button class="button icon-button" type="button" data-close="board-write-dialog" aria-label="닫기" data-i18n-aria-label="close"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button></header>
+      <label><span data-i18n="title">제목</span><input id="board-title-input" maxlength="100" required></label>
+      <label><span data-i18n="body">본문</span><textarea id="board-body-input" maxlength="10000" rows="7" placeholder="새 지침이나 변경사항을 작성하세요" data-i18n-placeholder="postPlaceholder"></textarea></label>
+      <div class="board-attachment-field">
+        <label><span data-i18n="attachImages">이미지 첨부</span><input id="board-file" type="file" multiple accept="image/png,image/jpeg,image/webp"></label>
+        <p data-i18n="imageHint">이미지 붙여넣기도 됩니다. PNG · JPG · WebP, 최대 4장, 장당 4 MiB</p>
+        <ul class="board-files" id="board-files" aria-label="첨부할 이미지" data-i18n-aria-label="imagesToAttach"></ul>
+      </div>
+      <p class="form-error" id="board-form-error" role="alert" hidden></p>
+      <footer><button class="button secondary" type="button" data-close="board-write-dialog" data-i18n="cancel">취소</button><button class="button primary" id="board-publish" type="submit" data-i18n="publish">게시하기</button></footer>
+    </form>
+  </dialog>
+  <dialog id="channel-dialog" aria-labelledby="channel-dialog-title">
+    <form class="dialog-body" id="channel-form">
+      <header><h2 id="channel-dialog-title" data-i18n="addChannel">채널 추가</h2><button class="button icon-button" type="button" data-close="channel-dialog" aria-label="닫기" data-i18n-aria-label="close"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button></header>
+      <label><span data-i18n="channelName">채널 이름</span><input id="channel-name" maxlength="32" placeholder="예: 코드 리뷰" data-i18n-placeholder="channelExample" required></label>
+      <p class="form-error" id="channel-error" role="alert" hidden></p>
+      <footer><button class="button secondary" type="button" data-close="channel-dialog" data-i18n="cancel">취소</button><button class="button primary" id="channel-submit" type="submit" data-i18n="create">만들기</button></footer>
+    </form>
+  </dialog>
+  <dialog id="folders-dialog" aria-labelledby="folders-title">
+    <div class="dialog-body">
+      <header><div><h2 id="folders-title" data-i18n="channelFolder">채널 폴더</h2><p id="folders-channel"></p></div><button class="button icon-button" type="button" data-close="folders-dialog" aria-label="닫기" data-i18n-aria-label="close"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button></header>
+      <form class="folder-form" id="folder-form">
+        <label for="folder-location" data-i18n="storageLocation">저장 위치</label>
+        <input id="folder-location" type="text" spellcheck="false" autocomplete="off" maxlength="1024" required aria-describedby="folder-help">
+        <p id="folder-help" data-i18n="storageHint">폴더의 절대 경로를 입력하거나 탐색기에서 복사한 경로를 붙여넣으세요.</p>
+        <div class="folder-options">
+          <label class="folder-copy"><input type="checkbox" id="folder-copy-shared" checked><span data-i18n="copyShared">기존 공유 파일 복사</span></label>
+          <div class="folder-buttons">
+            <button class="button secondary" type="button" id="folder-default" data-i18n="useDefault">기본 위치 사용</button>
+            <button class="button primary" type="submit" id="folder-save" data-i18n="saveLocation">위치 저장</button>
+          </div>
+        </div>
+        <p class="form-error" id="folder-error" role="alert" hidden></p>
+      </form>
+      <section>
+        <div class="setup-label"><strong>shared</strong><button class="button secondary copy-button" type="button" data-copy="shared-path" data-feedback="folders-feedback" data-i18n="copyPath">경로 복사</button></div>
+        <p data-i18n="sharedHint">이 채널의 참가자끼리 파일을 공유하는 폴더입니다.</p>
+        <pre id="shared-path" tabindex="0"></pre>
+        <button class="button secondary open-folder" type="button" data-folder="shared" data-i18n="openShared">shared 열기</button>
+      </section>
+      <section>
+        <div class="setup-label"><strong>logs</strong><button class="button secondary copy-button" type="button" data-copy="logs-path" data-feedback="folders-feedback" data-i18n="copyPath">경로 복사</button></div>
+        <p data-i18n="logsHint">보낸 메시지와 답변이 chat.jsonl에 자동 저장됩니다.</p>
+        <pre id="logs-path" tabindex="0"></pre>
+        <button class="button secondary open-folder" type="button" data-folder="logs" data-i18n="openLogs">logs 열기</button>
+      </section>
+      <p class="dialog-feedback" id="folders-feedback" role="status"></p>
+    </div>
+  </dialog>
+  <dialog id="join-dialog" aria-labelledby="join-title">
+    <form class="dialog-body" id="join-form">
+      <header><h2 id="join-title" data-i18n="addAgent">에이전트 추가</h2><button class="button icon-button" type="button" data-close="join-dialog" aria-label="닫기" data-i18n-aria-label="close"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button></header>
+      <label><span data-i18n="app">앱</span><select id="join-role" required><option value="codex">Codex</option><option value="claude">Claude</option></select></label>
+      <label><span data-i18n="nickname">닉네임</span><input id="join-name" maxlength="32" placeholder="예: Codex 구현" data-i18n-placeholder="nicknameExample" required></label>
+      <p class="form-error" id="join-error" role="alert" hidden></p>
+      <footer><button class="button secondary" type="button" data-close="join-dialog" data-i18n="cancel">취소</button><button class="button primary" id="join-submit" type="submit" data-i18n="add">추가</button></footer>
+    </form>
+  </dialog>
+  <dialog id="setup-dialog" aria-labelledby="setup-title">
+    <div class="dialog-body">
+      <header>
+        <div><h2 id="setup-title" data-i18n="setup">연결 설정</h2><p id="setup-id"></p></div>
+        <div class="setup-actions">
+          <button class="button danger" id="setup-delete" type="button" data-i18n="delete">삭제</button>
+          <button class="button icon-button" type="button" data-close="setup-dialog" aria-label="닫기" data-i18n-aria-label="close"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button>
+        </div>
+      </header>
+      <section id="setup-install" hidden>
+        <div class="setup-label"><strong data-i18n="installPrompt">설치 요청 프롬프트</strong><button class="button primary copy-button" type="button" data-copy="setup-install-prompt" data-feedback="setup-install-feedback" aria-label="설치 요청 프롬프트 복사" data-i18n-aria-label="copyInstallPrompt"><svg class="icon"><use href="/vendor/icons.svg#copy"></use></svg><span data-i18n="copy">복사</span></button></div>
+        <p id="setup-install-instruction"></p>
+        <details class="prompt-preview" id="setup-install-preview">
+          <summary data-i18n="showPrompt">프롬프트 보기</summary>
+          <pre id="setup-install-prompt" tabindex="0"></pre>
+        </details>
+        <p class="dialog-feedback" id="setup-install-feedback" role="status"></p>
+      </section>
+      <form id="rename-form">
+        <label for="agent-name" data-i18n="nickname">닉네임</label>
+        <div class="name-edit"><input id="agent-name" maxlength="32" required><button class="button secondary" id="rename-submit" type="submit" data-i18n="save">저장</button></div>
+        <p class="form-error" id="rename-error" role="alert" hidden></p>
+      </form>
+      <section class="automation-setting">
+        <label class="automation-toggle"><input id="setup-automation" type="checkbox"><span data-i18n="autoResume">새 메시지 자동 재개</span></label>
+        <p id="setup-automation-status"></p>
+        <p class="form-error" id="setup-automation-error" role="alert" hidden></p>
+      </section>
+      <section>
+        <div class="setup-label"><strong data-i18n="mcpConfig">MCP 설정</strong><button class="button secondary copy-button" type="button" data-copy="setup-config" data-feedback="setup-feedback"><svg class="icon"><use href="/vendor/icons.svg#copy"></use></svg><span data-i18n="copy">복사</span></button></div>
+        <p id="setup-instruction"></p>
+        <pre id="setup-config" tabindex="0"></pre>
+      </section>
+      <section>
+        <div class="setup-label"><strong data-i18n="waitPrompt">대기 프롬프트</strong><button class="button secondary copy-button" type="button" data-copy="setup-prompt" data-feedback="setup-feedback"><svg class="icon"><use href="/vendor/icons.svg#copy"></use></svg><span data-i18n="copy">복사</span></button></div>
+        <p data-i18n="waitHint">기존 대화에도 최신 프롬프트를 다시 보내세요. 수신은 최대 40초 대기 후 갱신합니다. 이미지 생성·파일 편집·터미널을 사용할 수 있고, 예전 MCP 도구 목록에서도 PNG를 첨부할 수 있습니다.</p>
+        <pre id="setup-prompt" tabindex="0"></pre>
+      </section>
+      <p class="dialog-feedback" id="setup-feedback" role="status"></p>
+    </div>
+  </dialog>
+  <dialog id="agent-delete-dialog" aria-labelledby="agent-delete-title">
+    <form class="dialog-body" id="agent-delete-form">
+      <header><h2 id="agent-delete-title" data-i18n="deleteAgent">에이전트 삭제</h2></header>
+      <section>
+        <strong id="agent-delete-name"></strong>
+        <p data-i18n="deleteAgentConfirm">참가자 목록에서 제거하고 새 메시지 수신을 종료합니다. 기존 대화 기록은 보존됩니다.</p>
+        <p class="form-error" id="agent-delete-error" role="alert" hidden></p>
+      </section>
+      <footer><button class="button secondary" type="button" data-close="agent-delete-dialog" autofocus data-i18n="cancel">취소</button><button class="button danger" id="agent-delete-confirm" type="submit" data-i18n="delete">삭제</button></footer>
+    </form>
+  </dialog>
+</body>
+</html>

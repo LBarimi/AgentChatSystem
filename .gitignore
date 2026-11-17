@@ -1,0 +1,36 @@
+# Local runtime and release artifacts
+/bin/internal/AgentChatSystem.pyz
+/bin/local_chat.pyz
+/var/
+/release/
+/MANIFEST.sha256
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.log
+chat.jsonl
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+/.venv/
+/venv/
+/.pytest_cache/
+/.mypy_cache/
+/.ruff_cache/
+
+# Local AI client configuration and environment files
+/.claude/
+/.claude.json
+/.codex/
+/.mcp.json
+/claude_desktop_config.json
+.env
+.env.*
+!.env.example
+
+# OS metadata
+Thumbs.db
+Desktop.ini
+.DS_Store
