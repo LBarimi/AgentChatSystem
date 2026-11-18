@@ -3,6 +3,7 @@ from configparser import Error as ConfigError
 from importlib.resources import files
 from ipaddress import ip_address
 from pathlib import Path
+from socketserver import TCPServer
 import json
 import os
 import re
@@ -812,8 +813,15 @@ class Handler(BaseHTTPRequestHandler):
             self._json(error.response(), error.status)
 
 
+class LoopbackHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # Keep the numeric loopback address so startup avoids reverse DNS.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 def serve(port, db_path, *, settings=None):
-    with ThreadingHTTPServer((LOOPBACK, port), Handler) as server:
+    with LoopbackHTTPServer((LOOPBACK, port), Handler) as server:
         server.settings = settings if settings is not None else Settings()
         server.room = Room(db_path)
         server.room.automation.start()

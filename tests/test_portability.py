@@ -17,9 +17,16 @@ from zipfile import ZipFile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 from relay import automation, storage
+from relay.server import Handler, LoopbackHTTPServer
 
 
 class PlatformSmoke(unittest.TestCase):
+    def test_loopback_bind_skips_reverse_dns(self):
+        with patch('socket.getfqdn', side_effect=AssertionError('Unexpected reverse DNS lookup')):
+            with LoopbackHTTPServer(('127.0.0.1', 0), Handler) as server:
+                self.assertEqual(server.server_name, '127.0.0.1')
+                self.assertGreater(server.server_port, 0)
+
     def test_source_launch_and_mcp_round_trip(self):
         packager = runpy.run_path(str(ROOT / 'bin/internal/package_release.py'))
         with TemporaryDirectory(prefix='agent-chat-smoke-') as temporary:
@@ -54,13 +61,7 @@ class PlatformSmoke(unittest.TestCase):
                 if windows:
                     subprocess.run([*start, '-NoOpen'], cwd=home, check=True, timeout=25)
                 else:
-                    diagnostics = home / 'startup diagnostics'
-                    diagnostics.mkdir()
-                    (diagnostics / 'sitecustomize.py').write_text(
-                        'import faulthandler\nfaulthandler.dump_traceback_later(5)\n', encoding='utf-8',
-                    )
-                    environment = dict(os.environ, PYTHONPATH=str(diagnostics))
-                    process = subprocess.Popen(start, cwd=home, stdin=subprocess.DEVNULL, env=environment)
+                    process = subprocess.Popen(start, cwd=home, stdin=subprocess.DEVNULL)
                 opener = build_opener(ProxyHandler({}))
 
                 def call(route, payload=None):
