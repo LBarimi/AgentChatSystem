@@ -13,6 +13,7 @@
 <body>
   <div class="app-shell">
     <aside class="rail" id="channels-panel" aria-label="워크스페이스" data-i18n-aria-label="workspace">
+      <div class="panel-resizer" id="channels-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="channels-panel" aria-valuemin="180" aria-valuemax="420" aria-valuenow="218" aria-label="채널 패널 너비 조절" data-i18n-aria-label="resizeChannels" data-i18n-title="resizePanelHint"></div>
       <div class="rail-header">
       <a class="brand" href="/" aria-label="AgentChatSystem 홈" data-i18n-aria-label="home">
         <span class="brand-mark"><svg class="icon"><use href="/vendor/icons.svg#arrow-left-right"></use></svg></span>
@@ -117,6 +118,7 @@
     </main>
 
     <aside class="agents" id="agents-panel" aria-labelledby="agents-title">
+      <div class="panel-resizer" id="agents-resizer" role="separator" tabindex="0" aria-orientation="vertical" aria-controls="agents-panel" aria-valuemin="200" aria-valuemax="480" aria-valuenow="278" aria-label="참가자 패널 너비 조절" data-i18n-aria-label="resizeParticipants" data-i18n-title="resizePanelHint"></div>
       <div class="agents-header">
         <div><h2 id="agents-title"><span data-i18n="participants">참가자</span> <span id="agent-count">0</span></h2><p id="agent-summary" data-i18n="connecting">연결 중</p></div>
         <button class="button icon-button close-agents" id="close-agents" type="button" title="참가자 닫기" data-i18n-title="closeParticipants"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg><span class="sr-only" data-i18n="closeParticipants">참가자 닫기</span></button>
@@ -126,6 +128,22 @@
     </aside>
   </div>
 
+  <div class="channel-menu" id="channel-menu" role="menu" hidden>
+    <button type="button" role="menuitem" id="channel-rename" data-i18n="renameChannel">채널명 변경</button>
+    <button type="button" role="menuitem" id="channel-delete" class="danger" data-i18n="deleteChannel">채널 삭제</button>
+    <p id="channel-protected" data-i18n="errorDefaultChannelDelete" hidden>기본 채널은 삭제할 수 없습니다.</p>
+  </div>
+  <dialog id="channel-delete-dialog" aria-labelledby="channel-delete-title">
+    <form class="dialog-body" id="channel-delete-form">
+      <header><h2 id="channel-delete-title" data-i18n="deleteChannel">채널 삭제</h2></header>
+      <section>
+        <strong id="channel-delete-name"></strong>
+        <p data-i18n="deleteChannelConfirm">채널과 대화, 첨부 파일, 채팅 로그, 대기 메시지를 삭제합니다. 공유 폴더의 파일은 보존됩니다. 이 작업은 되돌릴 수 없습니다.</p>
+        <p class="form-error" id="channel-delete-error" role="alert" hidden></p>
+      </section>
+      <footer><button class="button secondary" type="button" data-close="channel-delete-dialog" autofocus data-i18n="cancel">취소</button><button class="button danger" id="channel-delete-confirm" type="submit" data-i18n="delete">삭제</button></footer>
+    </form>
+  </dialog>
   <dialog id="clear-chat-dialog" aria-labelledby="clear-chat-title">
     <form class="dialog-body" id="clear-chat-form">
       <header><h2 id="clear-chat-title" data-i18n="clearChat">채팅 비우기</h2></header>
@@ -173,6 +191,20 @@
   <dialog id="folders-dialog" aria-labelledby="folders-title">
     <div class="dialog-body">
       <header><div><h2 id="folders-title" data-i18n="channelFolder">채널 폴더</h2><p id="folders-channel"></p></div><button class="button icon-button" type="button" data-close="folders-dialog" aria-label="닫기" data-i18n-aria-label="close"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button></header>
+      <section class="file-browser" aria-label="채널 파일" data-i18n-aria-label="channelFiles">
+        <p data-i18n="downloadHint">서버 PC의 파일을 이 기기로 다운로드합니다.</p>
+        <div class="file-toolbar">
+          <label><span data-i18n="fileFolder">폴더</span><select id="files-kind"><option value="shared">shared</option><option value="logs">logs</option></select></label>
+          <button class="button secondary" id="files-refresh" type="button" data-i18n="refreshFiles">새로고침</button>
+        </div>
+        <div class="file-location"><button class="button secondary" id="files-up" type="button" data-i18n="parentFolder" disabled>상위 폴더</button><code id="files-path">shared/</code></div>
+        <ul class="channel-files" id="channel-files"></ul>
+        <p id="files-status" role="status"></p>
+        <p class="form-error" id="files-error" role="alert" hidden></p>
+        <div class="file-pages"><button class="button secondary" id="files-previous" type="button" data-i18n="filePrevious" disabled>이전</button><button class="button secondary" id="files-next" type="button" data-i18n="fileNext" disabled>다음</button></div>
+      </section>
+      <details id="server-folder-settings" class="server-folder-settings">
+        <summary data-i18n="serverFolderSettings">서버 PC의 저장 위치 설정</summary>
       <form class="folder-form" id="folder-form">
         <label for="folder-location" data-i18n="storageLocation">저장 위치</label>
         <input id="folder-location" type="text" spellcheck="false" autocomplete="off" maxlength="1024" required aria-describedby="folder-help">
@@ -199,6 +231,7 @@
         <button class="button secondary open-folder" type="button" data-folder="logs" data-i18n="openLogs">logs 열기</button>
       </section>
       <p class="dialog-feedback" id="folders-feedback" role="status"></p>
+      </details>
     </div>
   </dialog>
   <dialog id="join-dialog" aria-labelledby="join-title">

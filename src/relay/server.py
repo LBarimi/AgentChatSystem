@@ -1,7 +1,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from configparser import Error as ConfigError
 from importlib.resources import files
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 from pathlib import Path
 from socketserver import TCPServer
 import json
@@ -11,7 +11,7 @@ import sqlite3
 import sys
 from threading import Condition, Lock
 from time import monotonic, time_ns
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 from uuid import UUID, uuid4
 
 from relay.automation import Automation
@@ -21,7 +21,7 @@ from relay.errors import ApiError
 from relay.storage import ChannelStorage, StorageError, TEXT_BYTES
 from relay.uploads import MAX_FILES, PNG_BYTES, MAX_UPLOAD_REQUEST, UploadError, is_png
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, LEGACY_MAX_WAIT_SECONDS, MCP_VERSION, LEGACY_PNG_PROMPT
-from relay.settings import APP_NAME, LANGUAGES, LOOPBACK, Settings
+from relay.settings import APP_NAME, LANGUAGES, LISTEN_HOST, LOOPBACK, Settings
 
 ROLES = ("codex", "claude")
 DEFAULT_CHANNEL = "general"
@@ -29,6 +29,7 @@ MAX_PARTICIPANTS = 64
 MAX_BODY = 48_000
 TEXT_LIMIT = 10_000
 WAIT_LIMIT = MAX_WAIT_SECONDS
+LAN_NETWORKS = tuple(ip_network(network) for network in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
 PENDING_MESSAGES = """
     FROM deliveries d JOIN messages m ON m.id=d.message_id
     WHERE NOT EXISTS(SELECT 1 FROM messages r WHERE r.reply_to=m.id AND r.sender=d.agent_id)
@@ -38,6 +39,14 @@ MESSAGE_FIELDS = 'm.id, m.channel_id, m.sender, m.recipient, m.body, m.reply_to,
 
 class RequestError(ApiError):
     pass
+
+
+def local_address(value):
+    try:
+        address = ip_address(value)
+    except ValueError:
+        return False
+    return address.version == 4 and (address.is_loopback or any(address in network for network in LAN_NETWORKS))
 
 
 class Room:
@@ -97,6 +106,8 @@ class Room:
             channel_columns = {row['name'] for row in self.db.execute('PRAGMA table_info(channels)')}
             if 'folder' not in channel_columns:
                 self.db.execute('ALTER TABLE channels ADD COLUMN folder TEXT')
+            if 'name_customized' not in channel_columns:
+                self.db.execute('ALTER TABLE channels ADD COLUMN name_customized INTEGER NOT NULL DEFAULT 0')
             self.db.execute('DROP INDEX IF EXISTS one_reply')
             self.db.execute('DROP INDEX IF EXISTS inbox')
             self.db.execute('CREATE INDEX IF NOT EXISTS channel_messages ON messages(channel_id,id)')
@@ -218,12 +229,40 @@ class Room:
                 channel = self._channel(channel_id)
                 target = self.storage.log_path(Path(channel['folder']))
                 with self.db:
-                    self.db.execute('DELETE FROM chat_attachments WHERE message_id IN (SELECT id FROM messages WHERE channel_id=?)', (channel_id,))
-                    self.db.execute('DELETE FROM deliveries WHERE message_id IN (SELECT id FROM messages WHERE channel_id=?)', (channel_id,))
-                    count = self.db.execute('DELETE FROM messages WHERE channel_id=?', (channel_id,)).rowcount
+                    count = self._delete_channel_messages(channel_id)
                     self.storage.log(target, (), replace=True)
                 self._notify()
                 return {'channel_id': channel_id, 'cleared': count}
+
+    def _delete_channel_messages(self, channel_id):
+        self.db.execute('DELETE FROM chat_attachments WHERE message_id IN (SELECT id FROM messages WHERE channel_id=?)', (channel_id,))
+        self.db.execute('DELETE FROM deliveries WHERE message_id IN (SELECT id FROM messages WHERE channel_id=?)', (channel_id,))
+        return self.db.execute('DELETE FROM messages WHERE channel_id=?', (channel_id,)).rowcount
+
+    def rename_channel(self, payload):
+        name = self._name(payload.get('name'), '채널 이름', 'errorChannelName')
+        with self.changed:
+            channel_id = self._channel(payload.get('channel_id'))['id']
+            self._check_name(name, self.channels(), channel_id)
+            with self.db:
+                self.db.execute('UPDATE channels SET name=?,name_customized=1 WHERE id=?', (name, channel_id))
+            self._notify()
+            return self._channel(channel_id)
+
+    def delete_channel(self, channel_id):
+        with self.folder_lock:
+            with self.changed:
+                channel = self._channel(channel_id)
+                if channel_id == DEFAULT_CHANNEL:
+                    raise RequestError('기본 채널은 삭제할 수 없습니다.', 409, key='errorDefaultChannelDelete')
+                target = self.storage.log_path(Path(channel['folder']))
+                with self.db:
+                    count = self._delete_channel_messages(channel_id)
+                    self.db.execute('DELETE FROM channels WHERE id=?', (channel_id,))
+                    self.storage.log(target, (), replace=True)
+                self.dirty_logs.discard(channel_id)
+                self._notify()
+                return {'channel_id': channel_id, 'deleted': True, 'cleared': count}
 
     def _check_folder_scope(self, location, default):
         folders = (location / 'shared', location / 'logs')
@@ -278,6 +317,14 @@ class Room:
             if action == 'read':
                 return self.storage.read_shared(root, payload.get('path'))
             return self.storage.write_shared(root, payload.get('path'), payload.get('text'))
+
+    def channel_files(self, channel_id, kind, relative, *, download=False, offset=0):
+        with self.folder_lock:
+            with self.changed:
+                root = Path(self._channel(channel_id)['folder'])
+            if download:
+                return self.storage.open_file(root, kind, relative)
+            return self.storage.list_files(root, kind, relative, offset)
 
     def _participant(self, agent_id, *, include_removed=False):
         if not isinstance(agent_id, str) or len(agent_id) > 32 or not agent_id.isascii():
@@ -572,6 +619,8 @@ class Room:
                         return {'state': 'removed'}
                     if not runner and self.automation.describe(agent)['enabled']:
                         return {'state': 'managed', 'message': '자동 재개 실행기가 이 받은편지함을 처리합니다. 수동 수신을 끝내세요.'}
+                    if channel_id:
+                        self._channel(channel_id)
                     revoked = self.board.revoked(agent)
                     if revoked:
                         return revoked
@@ -622,21 +671,29 @@ class Handler(BaseHTTPRequestHandler):
     def room(self):
         return self.server.room
 
-    def _check_local(self):
-        allowed_hosts = {f'{LOOPBACK}:{self.server.server_port}', f'localhost:{self.server.server_port}'}
+    def _check_local(self, *, files_write=False):
         hosts = self.headers.get_all('Host', [])
         origins = self.headers.get_all('Origin', [])
-        if (not ip_address(self.client_address[0]).is_loopback
-                or len(hosts) != 1 or hosts[0] not in allowed_hosts
-                or (origins and origins != [f'http://{hosts[0]}'])):
-            raise RequestError("로컬 접속만 허용됩니다.", 403, key='errorLocalOnly')
+        host = hosts[0] if len(hosts) == 1 else ''
+        hostname, separator, port = host.partition(':')
+        valid_port = port == str(self.server.server_port) if separator else self.server.server_port == 80
+        # Reject arbitrary DNS names, public peers, and cross-origin requests.
+        if (not local_address(self.client_address[0]) or not valid_port
+                or not (hostname == 'localhost' or local_address(hostname))
+                or (origins and origins != [f'http://{host}'])):
+            raise RequestError("로컬 또는 사내망의 동일 출처 접속만 허용됩니다.", 403, key='errorNetworkAccess')
+        if files_write and not ip_address(self.client_address[0]).is_loopback:
+            raise RequestError('파일 저장과 서버 폴더 설정은 서버 PC에서만 변경할 수 있습니다.',
+                               403, key='errorFilesLocalOnly')
 
-    def _bytes(self, status, data, content_type):
+    def _bytes(self, status, data, content_type, *, download_name=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
+        if download_name is not None:
+            self.send_header('Content-Disposition', f"attachment; filename=\"download\"; filename*=UTF-8''{quote(download_name, safe='')}")
         self.send_header("Content-Security-Policy",
                          "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         self.end_headers()
@@ -645,6 +702,31 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, data, status=200):
         self._bytes(status, json.dumps(data, ensure_ascii=False).encode("utf-8"),
                     "application/json; charset=utf-8")
+
+    def _download(self, channel_id, kind, relative):
+        handle, name = self.room.channel_files(channel_id, kind, relative, download=True)
+        with handle:
+            remaining = os.fstat(handle.fileno()).st_size
+            self.connection.settimeout(30)
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/octet-stream')
+            self.send_header('Content-Disposition', f"attachment; filename=\"download\"; filename*=UTF-8''{quote(name, safe='')}")
+            self.send_header('Content-Length', str(remaining))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.send_header('Content-Security-Policy', "default-src 'none'; sandbox")
+            self.end_headers()
+            try:
+                while remaining:
+                    chunk = handle.read(min(remaining, 128 * 1024))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+            except OSError:
+                # Headers are already sent; close an interrupted transfer cleanly.
+                pass
 
     @staticmethod
     def _number(params, name):
@@ -701,6 +783,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._bytes(200, files("relay.web").joinpath(filename).read_bytes(), content_type)
             elif url.path == "/api/health":
                 self._json({"service": APP_NAME, "pid": os.getpid(), "version": 11,
+                            "listen_host": self.server.server_address[0],
                             "mcp_version": MCP_VERSION, "receive_seconds": DEFAULT_WAIT_SECONDS,
                             "png_reply": True, "legacy_png_reply": True})
             elif url.path == "/api/room":
@@ -711,6 +794,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({'language': self._saved_language()})
             elif url.path == '/api/channels':
                 self._json({'channels': self.room.channels()})
+            elif url.path in ('/api/files', '/api/files/download'):
+                kind = params.get('kind', ['shared'])[0]
+                relative = params.get('path', [''])[0]
+                if url.path.endswith('/download'):
+                    self._download(channel_id or DEFAULT_CHANNEL, kind, relative)
+                else:
+                    self._json(self.room.channel_files(channel_id or DEFAULT_CHANNEL, kind, relative,
+                                                       offset=self._number(params, 'offset') or 0))
             elif url.path == '/api/setup':
                 agent_id = params.get('agent', [''])[0]
                 language = params.get('lang', [None])[0]
@@ -745,9 +836,13 @@ class Handler(BaseHTTPRequestHandler):
         except (ConnectionError, TimeoutError):
             pass
 
+        except OSError:
+            error = ApiError('채널 폴더에 접근할 수 없습니다. 파일 사용 상태와 권한을 확인하세요.', 503, key='errorFolderAccess')
+            self._json(error.response(), error.status)
+
     def do_POST(self):
         try:
-            self._check_local()
+            self._check_local(files_write=self.path in ('/api/channels/folder', '/api/channels/open', '/api/shared/write'))
             self.connection.settimeout(8)
             self.close_connection = True
             if self.headers.get_content_type() != "application/json" or self.headers.get("X-Local-Relay") != "1":
@@ -794,6 +889,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.room.configure_automation(payload))
             elif self.path == '/api/channels':
                 self._json(self.room.create_channel(payload), 201)
+            elif self.path == '/api/channels/rename':
+                self._json(self.room.rename_channel(payload))
+            elif self.path == '/api/channels/delete':
+                self._json(self.room.delete_channel(payload.get('channel_id')))
             elif self.path == '/api/channels/open':
                 self._json(self.room.storage_action('open', payload))
             elif self.path == '/api/channels/folder':
@@ -813,19 +912,20 @@ class Handler(BaseHTTPRequestHandler):
             self._json(error.response(), error.status)
 
 
-class LoopbackHTTPServer(ThreadingHTTPServer):
+class LocalHTTPServer(ThreadingHTTPServer):
     def server_bind(self):
-        # Keep the numeric loopback address so startup avoids reverse DNS.
+        # Keep the numeric bind address so startup avoids reverse DNS.
         TCPServer.server_bind(self)
         self.server_name, self.server_port = self.server_address[:2]
 
 
 def serve(port, db_path, *, settings=None):
-    with LoopbackHTTPServer((LOOPBACK, port), Handler) as server:
+    with LocalHTTPServer((LISTEN_HOST, port), Handler) as server:
         server.settings = settings if settings is not None else Settings()
         server.room = Room(db_path)
         server.room.automation.start()
         print(f"{APP_NAME}: http://{LOOPBACK}:{server.server_port}/", flush=True)
+        print(f"LAN: http://<this computer's LAN IPv4 address>:{server.server_port}/", flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:

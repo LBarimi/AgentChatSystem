@@ -9,6 +9,7 @@ APP_NAME = 'AgentChatSystem'
 DEFAULT_PORT = 9081
 DEFAULT_SETTINGS = '[server]\nport = 9081\n\n[ui]\nlanguage = auto\n'
 LOOPBACK = '127.0.0.1'
+LISTEN_HOST = '0.0.0.0'
 LANGUAGES = ('ko', 'ja', 'en', 'zh-CN', 'zh-TW', 'ru', 'de')
 MODULE = Path(__file__).resolve()
 PROJECT = MODULE.parents[4] if MODULE.parents[1].suffix == '.pyz' else MODULE.parents[2]

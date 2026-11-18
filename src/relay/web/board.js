@@ -275,7 +275,7 @@ boardForm.addEventListener("submit", async (event) => {
   boardPosting = true;
   el("board-publish").disabled = true;
   showMessage("board-form-error", "");
-  boardDraftId ||= crypto.randomUUID();
+  boardDraftId ||= draftId();
   const requestId = boardDraftId;
   try {
     const images = await Promise.all(boardFiles.map((file) => readUpload(file, file.name || t("attachedImage"))));

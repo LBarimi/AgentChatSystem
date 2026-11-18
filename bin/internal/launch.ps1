@@ -58,7 +58,7 @@ $chatUrl = 'http://{0}:{1}' -f $chatConfig.host, $chatConfig.port
 function Test-ChatOnline($chatProcessId) {
     try {
         $chatHealth = Invoke-RestMethod -Uri "$chatUrl/api/health" -TimeoutSec 1
-        return ($chatHealth.service -eq 'AgentChatSystem' -and $chatHealth.pid -eq $chatProcessId)
+        return ($chatHealth.service -eq 'AgentChatSystem' -and $chatHealth.pid -eq $chatProcessId -and $chatHealth.listen_host -eq $chatConfig.listen_host)
     } catch {
         return $false
     }

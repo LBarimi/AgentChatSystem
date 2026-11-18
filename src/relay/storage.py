@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path, PureWindowsPath
 import shutil
+import stat
 import subprocess
 import sys
 from tempfile import NamedTemporaryFile
@@ -82,6 +83,7 @@ class ChannelStorage:
         return {
             'id': channel['id'],
             'name': channel['name'],
+            'default_name': channel['id'] == 'general' and not channel['name_customized'],
             'folder': str(root),
             'default_folder': str(default),
             'shared': str(root / 'shared'),
@@ -158,35 +160,58 @@ class ChannelStorage:
         return {'path': str(path)}
 
     def shared_path(self, root, relative, allow_root=False):
-        base = self.folder(root, 'shared')
+        return self.file_path(root, 'shared', relative, allow_root)
+
+    def file_path(self, root, kind, relative, allow_root=False):
+        base = self.folder(root, kind)
         if allow_root and relative == '':
             return base, base
         if not isinstance(relative, str) or not 1 <= len(relative) <= 512:
-            raise StorageError('shared 기준 상대 경로를 입력하세요.')
+            raise StorageError('폴더 기준 상대 경로를 입력하세요.', key='errorFilePath')
         parts = relative.replace('\\', '/').split('/')
         if any(
             not part or part.endswith(('.', ' ')) or PureWindowsPath(part).is_reserved()
             or not part.isprintable() or any(c in part for c in '<>:"|?*')
             for part in parts
         ):
-            raise StorageError('shared 안의 일반 파일이나 폴더 경로를 입력하세요.')
+            raise StorageError('폴더 안의 일반 파일이나 폴더 경로를 입력하세요.', key='errorFilePath')
         return base, self._ordinary(base.joinpath(*parts))
 
     def list_shared(self, root, relative):
-        base, folder = self.shared_path(root, relative, allow_root=True)
+        return self.list_files(root, 'shared', relative)
+
+    def list_files(self, root, kind, relative, offset=0):
+        base, folder = self.file_path(root, kind, relative, allow_root=True)
+        if type(offset) is not int or offset < 0:
+            raise StorageError('올바른 목록 위치를 입력하세요.', key='errorFilePath')
         if not folder.is_dir():
-            raise StorageError('공유 폴더를 찾을 수 없습니다.', 404)
+            raise StorageError('폴더를 찾을 수 없습니다.', 404, key='errorFileMissing')
         entries = []
         for path in sorted(folder.iterdir(), key=lambda p: p.name.casefold()):
             try:
-                self._ordinary(path)
+                self.file_path(root, kind, path.relative_to(base).as_posix())
                 if path.is_dir():
                     entries.append({'path': path.relative_to(base).as_posix(), 'type': 'folder'})
                 elif path.is_file():
                     entries.append({'path': path.relative_to(base).as_posix(), 'type': 'file', 'bytes': path.stat().st_size})
             except (OSError, StorageError):
                 continue
-        return {'directory': str(folder), 'entries': entries[:200], 'truncated': len(entries) > 200}
+        return {'directory': str(folder), 'path': folder.relative_to(base).as_posix() if folder != base else '',
+                'entries': entries[offset:offset + 200], 'offset': offset, 'truncated': len(entries) > offset + 200}
+
+    def open_file(self, root, kind, relative):
+        _, path = self.file_path(root, kind, relative)
+        if not path.is_file():
+            raise StorageError('파일을 찾을 수 없습니다.', 404, key='errorFileMissing')
+        handle = self._ordinary(path).open('rb')
+        try:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise StorageError('일반 파일만 다운로드할 수 있습니다.', key='errorFilePath')
+            self._ordinary(path)
+        except BaseException:
+            handle.close()
+            raise
+        return handle, path.name
 
     def read_shared(self, root, relative):
         base, path = self.shared_path(root, relative)

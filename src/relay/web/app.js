@@ -30,6 +30,8 @@ let participantKey = "";
 let messageKey = "";
 let channelKey = "";
 let boardOpen = false;
+let filesRequest = 0;
+let filesView = { kind: "shared", path: "", offset: 0 };
 
 theme.value = localStorage.getItem("relay-theme") || "system";
 if (!theme.value) theme.value = "system";
@@ -91,25 +93,37 @@ function refreshControls() {
   el("add-channel").disabled = !ready;
   el("show-folders").disabled = !current;
   el("clear-chat").disabled = !ready || current.total_messages === 0;
+  for (const button of document.querySelectorAll(".channel-more")) button.disabled = !ready;
   recipient.disabled = !current?.participants.length;
   el("chat-attach").disabled = sending || !current;
   send.disabled = sending || !ready || !recipient.value || (!input.value.trim() && !chatFiles.length);
 }
 
 function showChannels() {
+  closeChannelMenu();
   const nodes = current.channels.map((channel) => {
+    const row = element("div", "channel-row");
+    row.classList.toggle("selected", channel.id === activeChannel);
     const button = element("button", "channel-item");
     button.type = "button";
     button.dataset.channel = channel.id;
     if (channel.id === activeChannel) button.setAttribute("aria-current", "page");
     button.append(icon("hash"), element("span", "", channelName(channel)));
-    return button;
+    const more = element("button", "channel-more", "⋮");
+    more.type = "button";
+    more.dataset.channelMenu = channel.id;
+    more.setAttribute("aria-label", t("channelActions", { name: channelName(channel) }));
+    more.setAttribute("aria-haspopup", "menu");
+    more.setAttribute("aria-controls", "channel-menu");
+    more.setAttribute("aria-expanded", "false");
+    row.append(button, more);
+    return row;
   });
   el("channel-list").replaceChildren(...nodes);
 }
 
 function channelName(channel) {
-  return channel.id === defaultChannel ? t("general") : channel.name;
+  return channel.id === defaultChannel && channel.default_name !== false ? t("general") : channel.name;
 }
 
 function showChatHeading() {
@@ -307,6 +321,7 @@ async function loadRoom() {
     if (requestId !== roomRequest) return;
     if (error.status === 404 && requestedChannel !== defaultChannel) {
       switchChannel(defaultChannel);
+      drafts.delete(requestedChannel);
     } else {
       showMessage("form-error", error.message);
     }
@@ -315,6 +330,7 @@ async function loadRoom() {
 
 function switchChannel(channelId) {
   if (channelId === activeChannel) return;
+  closeChannelMenu();
   drafts.set(activeChannel, { body: input.value, recipient: recipient.value, files: chatFiles, requestId: chatDraftId });
   activeChannel = channelId;
   localStorage.setItem("relay-channel", channelId);
@@ -426,7 +442,7 @@ el("composer").addEventListener("submit", async (event) => {
   const body = input.value;
   const selectedChannel = activeChannel;
   const target = recipient.value;
-  chatDraftId ||= crypto.randomUUID();
+  chatDraftId ||= draftId();
   const requestId = chatDraftId;
   try {
     const attachments = await Promise.all(chatFiles.map(({ file, name }) => readUpload(file, name)));
@@ -452,7 +468,64 @@ el("composer").addEventListener("submit", async (event) => {
   }
 });
 
+const channelMenu = el("channel-menu");
+const channelDeleteDialog = el("channel-delete-dialog");
+let channelMenuButton = null;
+
+function closeChannelMenu(restoreFocus = false) {
+  const button = channelMenuButton;
+  channelMenu.hidden = true;
+  channelMenuButton = null;
+  button?.setAttribute("aria-expanded", "false");
+  if (restoreFocus && button?.isConnected) button.focus({ preventScroll: true });
+}
+
+function openChannelMenu(button) {
+  if (channelMenuButton === button) return closeChannelMenu(true);
+  closeChannelMenu();
+  const channel = current?.channels.find(({ id }) => id === button.dataset.channelMenu);
+  if (!channel) return;
+  channelMenuButton = button;
+  channelMenu.dataset.channel = channel.id;
+  channelMenu.setAttribute("aria-label", t("channelActions", { name: channelName(channel) }));
+  el("channel-delete").disabled = channel.id === defaultChannel;
+  el("channel-protected").hidden = channel.id !== defaultChannel;
+  button.setAttribute("aria-expanded", "true");
+  channelMenu.hidden = false;
+  const bounds = button.getBoundingClientRect();
+  const menuBounds = channelMenu.getBoundingClientRect();
+  channelMenu.style.left = Math.max(8, Math.min(bounds.right - menuBounds.width, innerWidth - menuBounds.width - 8)) + "px";
+  channelMenu.style.top = Math.max(8, bounds.bottom + menuBounds.height + 8 <= innerHeight
+    ? bounds.bottom + 4 : bounds.top - menuBounds.height - 4) + "px";
+  el("channel-rename").focus();
+}
+
+channelMenu.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeChannelMenu(true);
+  } else if (event.key === "Tab") {
+    closeChannelMenu(true);
+  } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const buttons = [...channelMenu.querySelectorAll("button:not(:disabled)")];
+    const index = buttons.indexOf(document.activeElement);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
+      : (index + (event.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length;
+    buttons[next].focus();
+  }
+});
+document.addEventListener("pointerdown", (event) => {
+  if (!channelMenu.contains(event.target) && !event.target.closest("[data-channel-menu]")) closeChannelMenu();
+});
+document.addEventListener("scroll", (event) => {
+  if (!channelMenu.contains(event.target)) closeChannelMenu();
+}, true);
+window.addEventListener("resize", () => closeChannelMenu());
+
 el("channel-list").addEventListener("click", (event) => {
+  const more = event.target.closest("[data-channel-menu]");
+  if (more) return openChannelMenu(more);
   const button = event.target.closest("[data-channel]");
   if (!button) return;
   if (boardOpen) showBoard(false);
@@ -460,11 +533,55 @@ el("channel-list").addEventListener("click", (event) => {
   showSidePanel("channels", false);
   el("chat-title").focus({ preventScroll: true });
 });
-el("add-channel").addEventListener("click", () => {
+function editChannel(channel = null) {
   el("channel-form").reset();
+  channelDialog.dataset.channel = channel?.id || "";
+  const title = channel ? "renameChannel" : "addChannel";
+  const submit = channel ? "save" : "create";
+  el("channel-dialog-title").dataset.i18n = title;
+  el("channel-dialog-title").textContent = t(title);
+  el("channel-submit").dataset.i18n = submit;
+  el("channel-submit").textContent = t(submit);
+  if (channel) el("channel-name").value = channelName(channel);
   showMessage("channel-error", "");
   channelDialog.showModal();
   el("channel-name").focus();
+  el("channel-name").select();
+}
+el("add-channel").addEventListener("click", () => editChannel());
+el("channel-rename").addEventListener("click", () => {
+  const channel = current?.channels.find(({ id }) => id === channelMenu.dataset.channel);
+  closeChannelMenu(true);
+  if (channel) editChannel(channel);
+});
+el("channel-delete").addEventListener("click", () => {
+  const channel = current?.channels.find(({ id }) => id === channelMenu.dataset.channel);
+  closeChannelMenu(true);
+  if (!channel || channel.id === defaultChannel) return;
+  channelDeleteDialog.dataset.channel = channel.id;
+  el("channel-delete-name").textContent = channelName(channel);
+  showMessage("channel-delete-error", "");
+  channelDeleteDialog.showModal();
+});
+el("channel-delete-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const button = el("channel-delete-confirm");
+  if (button.disabled) return;
+  const channelId = channelDeleteDialog.dataset.channel;
+  button.disabled = true;
+  showMessage("channel-delete-error", "");
+  try {
+    await request("/api/channels/delete", { channel_id: channelId });
+    channelDeleteDialog.close();
+    if (activeChannel === channelId) switchChannel(defaultChannel);
+    else loadRoom();
+    drafts.delete(channelId);
+    el("add-channel").focus({ preventScroll: true });
+  } catch (error) {
+    showMessage("channel-delete-error", error.message);
+  } finally {
+    button.disabled = false;
+  }
 });
 el("channel-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -473,10 +590,16 @@ el("channel-form").addEventListener("submit", async (event) => {
   button.disabled = true;
   showMessage("channel-error", "");
   try {
-    const channel = await request("/api/channels", { name: el("channel-name").value });
+    const channelId = channelDialog.dataset.channel;
+    const channel = await request(channelId ? "/api/channels/rename" : "/api/channels", {
+      name: el("channel-name").value, ...(channelId ? { channel_id: channelId } : {}),
+    });
     channelDialog.close();
-    switchChannel(channel.id);
-    el("chat-title").textContent = channelName(channel);
+    if (channelId) loadRoom();
+    else {
+      switchChannel(channel.id);
+      el("chat-title").textContent = channelName(channel);
+    }
   } catch (error) {
     showMessage("channel-error", error.message);
   } finally {
@@ -490,6 +613,7 @@ function showFolderPaths(channel) {
   el("folder-location").value = channel.folder;
   el("folder-default").disabled = channel.folder === channel.default_folder;
   el("shared-path").textContent = channel.shared;
+  el("server-folder-settings").hidden = !["localhost", "127.0.0.1"].includes(location.hostname);
   el("logs-path").textContent = channel.logs;
 }
 
@@ -500,7 +624,63 @@ el("show-folders").addEventListener("click", () => {
   showMessage("folder-error", "");
   el("folders-feedback").textContent = "";
   foldersDialog.showModal();
+  el("files-kind").value = "shared";
+  el("server-folder-settings").open = false;
+  loadChannelFiles("shared");
 });
+
+async function loadChannelFiles(kind = filesView.kind, path = filesView.path, offset = filesView.offset) {
+  const requestId = ++filesRequest;
+  const channel = foldersDialog.dataset.channel;
+  filesView = { kind, path, offset };
+  const list = el("channel-files");
+  list.replaceChildren();
+  el("files-path").textContent = `${kind}/${path}`;
+  el("files-up").disabled = !path;
+  el("files-previous").disabled = true;
+  el("files-next").disabled = true;
+  el("files-status").textContent = t("loading");
+  showMessage("files-error", "");
+  try {
+    const query = new URLSearchParams({ channel, kind, path, offset });
+    const result = await request("/api/files?" + query);
+    if (requestId !== filesRequest || !foldersDialog.open) return;
+    for (const entry of result.entries) {
+      const row = element("li", "channel-file");
+      const name = entry.path.split("/").at(-1);
+      if (entry.type === "folder") {
+        const folder = element("button", "file-entry", name + "/");
+        folder.type = "button";
+        folder.prepend(icon("chevron-right"));
+        folder.addEventListener("click", () => loadChannelFiles(kind, entry.path, 0));
+        row.append(folder);
+      } else {
+        const info = element("span", "file-info");
+        info.append(element("span", "file-name", name), element("small", "file-size", `${entry.bytes.toLocaleString()} B`));
+        const link = element("a", "button secondary", t("download"));
+        link.href = "/api/files/download?" + new URLSearchParams({ channel, kind, path: entry.path });
+        link.download = name;
+        link.setAttribute("aria-label", t("downloadFile", { name }));
+        row.append(info, link);
+      }
+      list.append(row);
+    }
+    el("files-status").textContent = result.entries.length ? t("filesPage", { page: Math.floor(offset / 200) + 1 }) : t("noFiles");
+    el("files-previous").disabled = offset === 0;
+    el("files-next").disabled = !result.truncated;
+  } catch (error) {
+    if (requestId !== filesRequest || !foldersDialog.open) return;
+    el("files-status").textContent = "";
+    showMessage("files-error", error.message);
+  }
+}
+
+el("files-kind").addEventListener("change", () => loadChannelFiles(el("files-kind").value, "", 0));
+el("files-refresh").addEventListener("click", () => loadChannelFiles());
+el("files-up").addEventListener("click", () => loadChannelFiles(filesView.kind, filesView.path.split("/").slice(0, -1).join("/"), 0));
+el("files-previous").addEventListener("click", () => loadChannelFiles(filesView.kind, filesView.path, Math.max(0, filesView.offset - 200)));
+el("files-next").addEventListener("click", () => loadChannelFiles(filesView.kind, filesView.path, filesView.offset + 200));
+foldersDialog.addEventListener("close", () => { filesRequest++; });
 
 async function saveFolder(path) {
   const channelId = foldersDialog.dataset.channel;
@@ -519,6 +699,7 @@ async function saveFolder(path) {
     });
     if (foldersDialog.dataset.channel === channelId) {
       showFolderPaths(saved);
+      loadChannelFiles(el("files-kind").value, "", 0);
       el("folders-feedback").textContent = t("locationSaved");
     }
     if (activeChannel === channelId) loadRoom();
@@ -716,6 +897,7 @@ for (const button of document.querySelectorAll("[data-copy]")) {
 
 const sidePanels = { channels: "channels-toggle", agents: "roster-toggle" };
 function showSidePanel(panel, open) {
+  closeChannelMenu();
   for (const [name, toggle] of Object.entries(sidePanels)) {
     if (name !== panel && !open) continue;
     const visible = name === panel && open;
@@ -731,10 +913,91 @@ for (const [name, toggle] of Object.entries(sidePanels)) {
   });
 }
 
+// Keep panel preferences separate from viewport clamping so a smaller window
+// does not overwrite the widths chosen on a larger display.
+(() => {
+  const shell = document.querySelector(".app-shell");
+  const limits = { channels: [180, 420], agents: [200, 480] };
+  let preferred = {};
+  try {
+    const saved = JSON.parse(localStorage.getItem("relay-panel-widths") || "{}");
+    for (const name of Object.keys(limits)) {
+      if (Number.isFinite(saved?.[name])) preferred[name] = saved[name];
+    }
+  } catch { /* Use the default layout when saved preferences are unavailable. */ }
+  const defaults = () => innerWidth <= 1080 ? { channels: 192, agents: 210 } : { channels: 218, agents: 278 };
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+  function save() {
+    try { localStorage.setItem("relay-panel-widths", JSON.stringify(preferred)); } catch { /* Resizing still works. */ }
+  }
+  function fit() {
+    if (innerWidth <= 850) return;
+    const normal = defaults();
+    const budget = shell.clientWidth - 360;
+    let left = clamp(preferred.channels ?? normal.channels, ...limits.channels);
+    let right = clamp(preferred.agents ?? normal.agents, ...limits.agents);
+    right = Math.max(limits.agents[0], Math.min(right, budget - left));
+    left = Math.max(limits.channels[0], Math.min(left, budget - right));
+    for (const [name, width, otherWidth] of [["channels", left, right], ["agents", right, left]]) {
+      shell.style.setProperty(`--${name}-width`, width + "px");
+      el(name + "-resizer").setAttribute("aria-valuenow", Math.round(width));
+      el(name + "-resizer").setAttribute("aria-valuemax", Math.floor(Math.min(limits[name][1], budget - otherWidth)));
+    }
+  }
+  function setWidth(name, width) {
+    const other = name === "channels" ? "agents" : "channels";
+    const available = shell.clientWidth - 360 - el(other + "-panel").getBoundingClientRect().width;
+    preferred[name] = clamp(width, limits[name][0], Math.min(limits[name][1], available));
+    fit();
+  }
+  for (const name of Object.keys(limits)) {
+    const handle = el(name + "-resizer");
+    const direction = name === "channels" ? 1 : -1;
+    let drag = null;
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || innerWidth <= 850) return;
+      event.preventDefault();
+      closeChannelMenu();
+      handle.focus({ preventScroll: true });
+      drag = { id: event.pointerId, x: event.clientX, width: el(name + "-panel").getBoundingClientRect().width };
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add("dragging");
+      document.body.classList.add("resizing-panels");
+    });
+    handle.addEventListener("pointermove", (event) => {
+      if (drag?.id === event.pointerId) setWidth(name, drag.width + direction * (event.clientX - drag.x));
+    });
+    const finish = () => {
+      if (!drag) return;
+      drag = null;
+      handle.classList.remove("dragging");
+      document.body.classList.remove("resizing-panels");
+      save();
+    };
+    for (const event of ["pointerup", "pointercancel", "lostpointercapture"]) handle.addEventListener(event, finish);
+    handle.addEventListener("dblclick", () => { delete preferred[name]; fit(); save(); });
+    handle.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const width = el(name + "-panel").getBoundingClientRect().width;
+      const step = event.shiftKey ? 40 : 10;
+      setWidth(name, event.key === "Home" ? limits[name][0] : event.key === "End" ? limits[name][1]
+        : width + direction * (event.key === "ArrowRight" ? step : -step));
+      save();
+    });
+    window.addEventListener("blur", finish);
+    window.addEventListener("resize", finish);
+  }
+  window.addEventListener("resize", fit);
+  fit();
+})();
+
 document.addEventListener("languagechange", () => {
+  closeChannelMenu();
   if (current) applyRoom(current, true);
   connection(live);
   showChatFiles();
+  if (foldersDialog.open) loadChannelFiles();
 });
 
 initializeLanguage().then(() => {

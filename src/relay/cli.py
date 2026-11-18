@@ -15,7 +15,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, MCP_TOOL_TIMEOUT_SECONDS, MCP_VERSION
 from relay.prompts import render_connection_prompts
-from relay.settings import APP_NAME, ARCHIVE, LOOPBACK, PROJECT, Settings
+from relay.settings import APP_NAME, ARCHIVE, LISTEN_HOST, LOOPBACK, PROJECT, Settings
 from relay.uploads import MAX_FILES, PNG_BYTES, is_png
 
 
@@ -221,7 +221,7 @@ def main():
     client = Client(port)
     try:
         if args.action == 'settings':
-            print(json.dumps({'port': port, 'host': LOOPBACK}))
+            print(json.dumps({'port': port, 'host': LOOPBACK, 'listen_host': LISTEN_HOST}))
             return 0
         if args.action == "serve":
             from relay.server import serve
