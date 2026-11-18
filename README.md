@@ -23,6 +23,8 @@ Click a participant card, choose a **Participant icon**, and click **Save**. Use
 
 The **Connected users** list below the participant cards shows browsers currently connected to ACS, grouped by IP so multiple tabs from one address appear once. It displays the computer name when the server can resolve it, otherwise the IP. Local loopback connections use the server computer’s name; LAN names depend on the network’s reverse name lookup. Name lookup runs in the background without delaying chat. Users disappear after the server detects that their last browser connection has closed. This list is shared across channels and is separate from AI participants.
 
+Your entry is marked **(You)** in yellow. New human messages save the sender’s computer name (or IP when unavailable), and your messages have yellow names, avatars, and a tinted background. Self identification follows the actual connection IP, matching the connected-user list; names alone never identify a sender. Saved names remain available after disconnects and server restarts. Older messages without sender details display **User** and are not marked as yours.
+
 ## Connect an agent
 
 Use the configuration generated in the participant card. **Setup prompt**, at the bottom of the connection dialog, gives a local AI session instructions for applying the configuration. Below **Show prompt**, expand **Manual MCP configuration** to see the configuration and its copy button. Both sections start collapsed. To configure the connection yourself, use the method for your client.

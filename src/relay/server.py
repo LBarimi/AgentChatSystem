@@ -38,7 +38,7 @@ PENDING_MESSAGES = """
     FROM deliveries d JOIN messages m ON m.id=d.message_id
     WHERE NOT EXISTS(SELECT 1 FROM messages r WHERE r.reply_to=m.id AND r.sender=d.agent_id)
 """
-MESSAGE_FIELDS = 'm.id, m.channel_id, m.sender, m.recipient, m.body, m.reply_to, m.created_at'
+MESSAGE_FIELDS = 'm.id, m.channel_id, m.sender, m.recipient, m.body, m.reply_to, m.created_at, m.user_ip, m.user_name'
 
 
 class RequestError(ApiError):
@@ -106,6 +106,9 @@ class Room:
                 ''')
             if 'request_id' not in columns:
                 self.db.execute('ALTER TABLE messages ADD COLUMN request_id TEXT')
+            for column in ('user_ip', 'user_name'):
+                if column not in columns:
+                    self.db.execute(f'ALTER TABLE messages ADD COLUMN {column} TEXT')
             participant_columns = {row['name'] for row in self.db.execute('PRAGMA table_info(participants)')}
             if 'removed_at' not in participant_columns:
                 self.db.execute('ALTER TABLE participants ADD COLUMN removed_at TEXT')
@@ -485,7 +488,7 @@ class Room:
             SELECT id,role,name,icon FROM participants WHERE removed_at IS NOT NULL AND id IN ({placeholders})
         ''', tuple(ids))]
 
-    def snapshot(self, channel_id):
+    def snapshot(self, channel_id, *, viewer_address=None):
         with self.changed:
             channel = self._channel(channel_id)
             rows = self.db.execute(
@@ -498,15 +501,17 @@ class Room:
                 "channels": self.channels(),
                 "participants": self.participants(channel_id),
                 "users": self.users.snapshot(),
+                "viewer": self.users.identity(viewer_address),
                 "archived_participants": self._archived_participants(rows),
                 "total_messages": self.db.execute('SELECT COUNT(*) FROM messages WHERE channel_id=?', (channel_id,)).fetchone()[0],
                 "messages": self.chat_files.attach_metadata(reversed(rows)),
             }
 
-    def _insert(self, channel_id, sender, recipient, body, reply_to=None, *, files=(), request_id=None):
+    def _insert(self, channel_id, sender, recipient, body, reply_to=None, *, files=(), request_id=None, user=None):
+        user = user or {}
         cursor = self.db.execute(
-            "INSERT INTO messages(channel_id,sender,recipient,body,reply_to,remaining,request_id) VALUES(?,?,?,?,?,0,?)",
-            (channel_id, sender, recipient, body, reply_to, request_id),
+            "INSERT INTO messages(channel_id,sender,recipient,body,reply_to,remaining,request_id,user_ip,user_name) VALUES(?,?,?,?,?,0,?,?,?)",
+            (channel_id, sender, recipient, body, reply_to, request_id, user.get('ip'), user.get('name')),
         )
         message_id = cursor.lastrowid
         if recipient == 'all':
@@ -518,13 +523,13 @@ class Room:
         message = self.db.execute(f'SELECT {MESSAGE_FIELDS} FROM messages m WHERE id=?', (message_id,)).fetchone()
         return self.chat_files.attach_metadata((message,))[0]
 
-    def post(self, payload):
+    def post(self, payload, *, user_address=None):
         with self.uploads.lock:
-            result = self._post(payload)
+            result = self._post(payload, user_address=user_address)
             self.uploads.discard(payload.get('attachments', []))
             return result
 
-    def _post(self, payload):
+    def _post(self, payload, *, user_address=None):
         sender = payload.get("sender")
         attachments = payload.get('attachments', [])
         body = payload.get("body", "")
@@ -548,7 +553,8 @@ class Room:
                         raise RequestError('전송 요청 ID를 확인하세요.', key='errorRequestId') from None
                     existing = self.db.execute(f'SELECT {MESSAGE_FIELDS} FROM messages m WHERE request_id=?', (request_id,)).fetchone()
                     if existing:
-                        if existing['channel_id'] != channel_id or existing['recipient'] != recipient:
+                        if (existing['channel_id'] != channel_id or existing['recipient'] != recipient
+                                or existing['user_ip'] != user_address):
                             raise RequestError('전송 요청 ID가 이미 사용 중입니다.', 409, key='errorRequestUsed')
                         return {"message": self.chat_files.attach_metadata((existing,))[0], "duplicate": True}
                 if recipient == 'all':
@@ -558,7 +564,8 @@ class Room:
                     raise RequestError('보낼 대상을 선택하세요.', key='errorChooseRecipient')
                 files = prepare_chat_files(attachments, self.uploads)
                 with self.db:
-                    message = self._insert(channel_id, sender, recipient, body.strip(), files=files, request_id=request_id)
+                    message = self._insert(channel_id, sender, recipient, body.strip(), files=files, request_id=request_id,
+                                           user=self.users.identity(user_address))
             elif self._participant(sender) is not None:
                 reply_to = payload.get("reply_to")
                 handoff = payload.get("handoff", True)
@@ -689,6 +696,7 @@ class Handler(BaseHTTPRequestHandler):
         "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
         "/uploads.js": ("uploads.js", "text/javascript; charset=utf-8"),
         "/recipient.js": ("recipient.js", "text/javascript; charset=utf-8"),
+        "/users.js": ("users.js", "text/javascript; charset=utf-8"),
         "/app.js": ("app.js", "text/javascript; charset=utf-8"),
         "/board.js": ("board.js", "text/javascript; charset=utf-8"),
         "/style.css": ("style.css", "text/css; charset=utf-8"),
@@ -834,7 +842,7 @@ class Handler(BaseHTTPRequestHandler):
                             "mcp_version": MCP_VERSION, "receive_seconds": DEFAULT_WAIT_SECONDS,
                             "png_reply": True, "legacy_png_reply": True})
             elif url.path == "/api/room":
-                self._json(self.room.snapshot(channel_id or DEFAULT_CHANNEL))
+                self._json(self.room.snapshot(channel_id or DEFAULT_CHANNEL, viewer_address=self.client_address[0]))
             elif url.path == "/api/events":
                 self._events()
             elif url.path == '/api/settings':
@@ -929,7 +937,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.room.uploads.discard(items)
                 self._json({'discarded': True})
             elif self.path == "/api/messages":
-                self._json(self.room.post(payload))
+                self._json(self.room.post(payload, user_address=self.client_address[0]))
             elif self.path == '/api/settings/language':
                 try:
                     language = self.server.settings.set_language(

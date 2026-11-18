@@ -1,6 +1,5 @@
 const el = (id) => document.getElementById(id);
 const roleName = { codex: "Codex", claude: "Claude" };
-const roleIcon = { codex: "terminal", claude: "bot" };
 const messages = el("messages");
 const scrollRegion = el("scroll-region");
 const input = el("body");
@@ -75,11 +74,11 @@ function icon(name) {
   return svg;
 }
 
-function avatar(role) {
-  const avatar = element("span", "avatar " + role);
-  avatar.setAttribute("aria-hidden", "true");
-  avatar.append(role === "user" ? t("me") : icon(roleIcon[role]));
-  return avatar;
+function userAvatar(own) {
+  const node = element("span", "avatar user" + (own ? " is-self" : ""));
+  node.setAttribute("aria-hidden", "true");
+  node.append(own ? t("me") : icon("users"));
+  return node;
 }
 
 function providerIcon(role) {
@@ -252,8 +251,9 @@ function showUsers() {
   const previousScroll = list.scrollTop;
   list.replaceChildren(...users.map((user) => {
     const item = element("li", "user-card");
+    item.classList.toggle("is-self", isSelfUser(user.ip, current.viewer));
     const details = element("span", "user-details");
-    details.append(element("strong", "", user.name));
+    details.append(element("strong", "", userLabel(user.name, user.ip, current.viewer, t)));
     if (user.name !== user.ip) details.append(element("small", "", user.ip));
     const online = element("span", "user-online");
     online.title = t("connected");
@@ -304,12 +304,14 @@ function messageAttachments(attachments) {
 
 function row(message, participants) {
   const sender = participants.get(message.sender);
+  const user = chatUserIdentity(message, current?.viewer, current?.users || [], t);
   const to = participants.get(message.recipient);
   const item = element("li", "message");
+  item.classList.toggle("is-self", user.own);
   item.id = "message-" + message.id;
   const content = element("div");
   const meta = element("div", "message-meta");
-  meta.append(element("strong", "", sender?.name || (message.sender === "user" ? t("me") : message.sender)));
+  meta.append(element("strong", "", sender?.name || (message.sender === "user" ? user.label : message.sender)));
   const route = element("span", "message-route");
   const target = message.recipient === "all" ? t("all") : to?.name;
   route.append(icon(target ? "arrow-right" : "check"), target || t("channelReply"));
@@ -326,7 +328,7 @@ function row(message, participants) {
   content.append(meta);
   if (message.body) content.append(element("p", "message-body", message.body));
   if (message.attachments?.length) content.append(messageAttachments(message.attachments));
-  item.append(sender ? participantAvatar(sender) : avatar("user"), content);
+  item.append(sender ? participantAvatar(sender) : userAvatar(user.own), content);
   return item;
 }
 
@@ -335,7 +337,7 @@ function applyRoom(snapshot, repaint = false) {
   const lastParticipants = participantKey;
   participantKey = JSON.stringify(snapshot.participants.map(({ id, name, role, icon }) => [id, name, role, icon]));
   const dirtyRoster = !current || JSON.stringify(snapshot.participants) !== JSON.stringify(current.participants);
-  const dirtyUsers = !current || JSON.stringify(snapshot.users) !== JSON.stringify(current.users);
+  const dirtyUsers = !current || JSON.stringify([snapshot.viewer, snapshot.users]) !== JSON.stringify([current.viewer, current.users]);
   current = snapshot;
   const channels = JSON.stringify([activeChannel, snapshot.channels]);
   if (repaint || channelKey !== channels) {
@@ -352,7 +354,7 @@ function applyRoom(snapshot, repaint = false) {
   refreshControls();
 
   const key = snapshot.messages.map((message) => message.id).join(",");
-  if (!repaint && key === messageKey && lastParticipants === participantKey) return;
+  if (!repaint && !dirtyUsers && key === messageKey && lastParticipants === participantKey) return;
   const atBottom = scrollRegion.scrollHeight - scrollRegion.scrollTop - scrollRegion.clientHeight < 85;
   messageKey = key;
   const names = new Map([...snapshot.archived_participants, ...snapshot.participants].map((agent) => [agent.id, agent]));

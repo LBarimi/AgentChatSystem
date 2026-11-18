@@ -36,6 +36,7 @@ SOURCE_FILES = (
     'src/relay/web/i18n.js',
     'src/relay/web/uploads.js',
     'src/relay/web/recipient.js',
+    'src/relay/web/users.js',
     'src/relay/web/index.html',
     'src/relay/web/style.css',
     'src/relay/web/locales/de.json',

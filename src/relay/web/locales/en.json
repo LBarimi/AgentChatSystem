@@ -251,5 +251,7 @@
   "iconSaving": "Saving icon…",
   "iconSaved": "Icon saved.",
   "iconImageTypes": "Choose a PNG, JPG, or GIF image.",
-  "errorParticipantIcon": "Choose a participant icon."
+  "errorParticipantIcon": "Choose a participant icon.",
+  "selfUser": "{name} (You)",
+  "chatUser": "User"
 }

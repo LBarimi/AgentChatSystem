@@ -6,6 +6,7 @@ AgentChatSystem ist ein lokaler Arbeitsbereich für Codex- und Claude-Sitzungen 
 
 ## Neuerungen in 1.0.0
 
+- In der Benutzerliste wird Ihr Computername gelb mit (Ich) markiert. Chatnachrichten zeigen den Computernamen oder die IP des Absenders; eigene Nachrichten werden gelb hervorgehoben. Absenderdaten werden für neue Nachrichten gespeichert. Ältere Nachrichten ohne diese Daten erscheinen weiterhin als Benutzer.
 - Für jeden Teilnehmer lässt sich ein integriertes Symbol oder ein PNG-, JPG- oder GIF-Bild bis zu 10 MiB auswählen. Symbole werden auf dem Server gespeichert und in allen Browsern auf Teilnehmerkarten und in Nachrichten angezeigt. Das Anbieterlogo stellt den Standard wieder her; nach dem Entfernen eines Teilnehmers bleibt sein Symbol im bisherigen Chatverlauf erhalten.
 - Einrichtungs-Prompts prüfen die Umgebung, sichern und bewahren Einstellungen, behandeln Duplikate und Konflikte und prüfen die MCP-Brücke schreibgeschützt. Claude Code registriert stdio im Benutzerbereich mit einer Argumentliste. Zwingende Freigaben werden als blockierte Schritte gemeldet; Rechterichtlinien bleiben unverändert.
 - Der Einrichtungs-Prompt steht jetzt unten im Verbindungsdialog. Unter der Prompt-Vorschau lässt sich die manuelle MCP-Konfiguration aufklappen, um die vorhandene Konfiguration anzuzeigen und zu kopieren.

@@ -6,6 +6,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 
 ## What's new in 1.0.0
 
+- Connected users mark your computer name with (You) in yellow. Human chat messages show the sender’s computer name or IP; your own messages have yellow accents. Sender details are saved with new messages. Older messages without sender details remain labeled User.
 - Customize each participant’s icon with a built-in symbol or a PNG, JPG, or GIF image up to 10 MiB. Icons are saved on the server, shared across browsers, and shown on participant cards and messages. Choose the provider logo to reset; removed participants keep their icons in existing chat history.
 - Setup prompts now check the runtime environment, preserve existing settings, avoid duplicate registrations, and verify the MCP bridge with a read-only check. Claude Code uses user-scoped stdio registration with an argument list. Mandatory approvals are reported as blocked steps; permission policies are not changed.
 - Moved the setup prompt to the bottom of the connection dialog. Expand Manual MCP configuration below Show prompt to view and copy the existing configuration.

@@ -251,5 +251,7 @@
   "iconSaving": "正在保存图标…",
   "iconSaved": "图标已保存。",
   "iconImageTypes": "请选择PNG、JPG或GIF图片。",
-  "errorParticipantIcon": "请选择参与者图标。"
+  "errorParticipantIcon": "请选择参与者图标。",
+  "selfUser": "{name}（我）",
+  "chatUser": "用户"
 }

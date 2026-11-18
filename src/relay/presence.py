@@ -69,6 +69,18 @@ class ConnectedUsers:
         with self.changed:
             return [{'ip': address, 'name': user['name']} for address, user in self.active.items()]
 
+    def identity(self, address):
+        """Use the actual HTTP peer; never wait for a network name lookup."""
+        if address is None:
+            return None
+        with self.changed:
+            active = self.active.get(address)
+            cached = self.cache.get(address)
+            name = active['name'] if active else cached[1] if cached and cached[0] > monotonic() else None
+            if (not name or name == address) and ip_address(address).is_loopback:
+                name = computer_name(address)
+            return {'ip': address, 'name': name or address}
+
     def _resolve(self):
         while True:
             with self.changed:

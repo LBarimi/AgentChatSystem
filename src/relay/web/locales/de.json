@@ -251,5 +251,7 @@
   "iconSaving": "Symbol wird gespeichert…",
   "iconSaved": "Symbol gespeichert.",
   "iconImageTypes": "Wählen Sie ein PNG-, JPG- oder GIF-Bild.",
-  "errorParticipantIcon": "Wählen Sie ein Teilnehmersymbol."
+  "errorParticipantIcon": "Wählen Sie ein Teilnehmersymbol.",
+  "selfUser": "{name} (Ich)",
+  "chatUser": "Benutzer"
 }

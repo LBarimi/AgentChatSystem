@@ -29,6 +29,8 @@
   --route: #435675;
   --user-soft: #eaf0f8;
   --user-ink: #3a4d68;
+  --self-ink: #806000;
+  --self-soft: #fff5cc;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -145,6 +147,10 @@
   --user-soft: #42334d;
   --user-ink: #ebd9f4;
 }
+:root:is([data-theme="dark"], [data-theme="graphite"], [data-theme="ocean"], [data-theme="plum"]) {
+  --self-ink: #f5ce58;
+  --self-soft: #3b321d;
+}
 html:lang(ja) { font-family: "Yu Gothic UI", Meiryo, sans-serif; }
 html:lang(zh-CN) { font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif; }
 html:lang(zh-TW) { font-family: "Microsoft JhengHei UI", "Microsoft JhengHei", sans-serif; }
@@ -243,6 +249,9 @@ body.resizing-panels, body.resizing-panels * { cursor: col-resize !important; us
 .avatar.user { background: var(--user-soft); color: var(--user-ink); font-size: 13px; font-weight: 740; }
 .message-meta { display: flex; align-items: center; flex-wrap: wrap; column-gap: 9px; row-gap: 4px; min-height: 20px; font-size: 12px; color: var(--muted); }
 .message-meta strong { font-size: 14px; color: var(--ink); font-weight: 740; overflow-wrap: anywhere; }
+.message.is-self .message-meta strong, .user-card.is-self .user-details strong { color: var(--self-ink); }
+.avatar.user.is-self { color: var(--self-ink); background: var(--self-soft); }
+.message.is-self > div { background: var(--self-soft); border-left: 3px solid var(--self-ink); border-radius: 8px; padding: 10px 12px; min-width: 0; }
 .message-meta time { margin-left: auto; font-size: 11px; color: var(--muted); white-space: nowrap; }
 .message-route { display: inline-flex; align-items: center; gap: 4px; background: var(--surface); padding: 3px 6px; border-radius: 5px; color: var(--route); font-size: 11px; font-weight: 630; overflow-wrap: anywhere; }
 .message-route .icon { width: 12px; height: 12px; }

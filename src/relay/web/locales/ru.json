@@ -251,5 +251,7 @@
   "iconSaving": "Сохранение значка…",
   "iconSaved": "Значок сохранён.",
   "iconImageTypes": "Выберите изображение PNG, JPG или GIF.",
-  "errorParticipantIcon": "Выберите значок участника."
+  "errorParticipantIcon": "Выберите значок участника.",
+  "selfUser": "{name} (Вы)",
+  "chatUser": "Пользователь"
 }

@@ -251,5 +251,7 @@
   "iconSaving": "아이콘 저장 중…",
   "iconSaved": "아이콘을 저장했습니다.",
   "iconImageTypes": "PNG, JPG, GIF 이미지를 선택하세요.",
-  "errorParticipantIcon": "참가자 아이콘을 선택하세요."
+  "errorParticipantIcon": "참가자 아이콘을 선택하세요.",
+  "selfUser": "{name} (나)",
+  "chatUser": "사용자"
 }
