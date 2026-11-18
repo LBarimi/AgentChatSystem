@@ -57,7 +57,7 @@ class ChannelManagement(unittest.TestCase):
         channel = self.room.set_folder({'channel_id': channel['id'], 'folder': str(self.root / 'custom files')})
         shared = Path(channel['shared']) / 'keep.md'
         shared.write_text('Keep this shared file.', encoding='utf-8')
-        removed = self.post(channel['id'], attachments=[{'name': 'task.md', 'data': b64encode(b'task').decode()}])
+        removed = self.post(channel['id'], attachments=[{'name': 'task.txt', 'data': b64encode(b'task').decode()}])
         kept = self.post('general', 'Keep this message')
         self.room.publish_board_post({'request_id': str(uuid4()), 'title': 'Keep instructions', 'body': 'Shared instructions'})
         self.assertEqual(self.room.delete_channel(channel['id'])['cleared'], 1)

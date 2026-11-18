@@ -1,5 +1,5 @@
 from uuid import UUID
-from relay.uploads import MAX_FILES, decode_upload, is_png
+from relay.uploads import file_data, prepare_files
 
 from relay.errors import ApiError
 
@@ -16,20 +16,7 @@ def record_id(value):
     return value
 
 
-def _image_upload(attachment):
-    name, decoded = decode_upload(attachment)
-    if is_png(decoded):
-        mime = 'image/png'
-    elif decoded.startswith(b'\xff\xd8\xff') and decoded.endswith(b'\xff\xd9'):
-        mime = 'image/jpeg'
-    elif decoded.startswith(b'RIFF') and decoded[8:12] == b'WEBP':
-        mime = 'image/webp'
-    else:
-        raise BoardError('PNG, JPG 또는 WebP 이미지를 올리세요.', 415, key='errorImageType')
-    return name, mime, decoded
-
-
-def prepare_post(payload):
+def prepare_post(payload, uploads=None):
     request_id, title, body = (payload.get(key) for key in ('request_id', 'title', 'body'))
     if not isinstance(request_id, str) or len(request_id) != 36:
         raise BoardError('글쓰기 요청을 확인하세요.', key='errorPostRequest')
@@ -47,12 +34,10 @@ def prepare_post(payload):
         body.encode('utf-8')
     except UnicodeError:
         raise BoardError('본문을 UTF-8로 읽을 수 없습니다.', key='errorPostEncoding') from None
-    attachments = payload.get('images', [])
-    if not isinstance(attachments, list) or len(attachments) > MAX_FILES:
-        raise BoardError('이미지는 최대 4장까지 올릴 수 있습니다.', key='errorBoardImageLimit')
+    attachments = prepare_files(payload.get('attachments', payload.get('images', [])), uploads)
     if not body and not attachments:
-        raise BoardError('본문을 쓰거나 이미지를 첨부하세요.', key='errorPostBody')
-    return request_id, title, body, [_image_upload(image) for image in attachments]
+        raise BoardError('본문을 쓰거나 파일을 첨부하세요.', key='errorPostBody')
+    return request_id, title, body, attachments
 
 
 class Board:
@@ -102,7 +87,7 @@ class Board:
             ).lastrowid
             self.db.executemany(
                 'INSERT INTO board_images(post_id,name,mime_type,data) VALUES (?,?,?,?)',
-                ((post_id, name, mime, data) for name, mime, data in images),
+                ((post_id, name, mime, file_data(data)) for name, mime, data in images),
             )
             self.db.execute('INSERT INTO board_delivery(post_id,agent_id) SELECT ?,id FROM participants WHERE removed_at IS NULL', (post_id,))
         return self.post(post_id), True

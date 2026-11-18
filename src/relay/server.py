@@ -19,7 +19,7 @@ from relay.board import Board, prepare_post
 from relay.chat_files import ChatFiles, prepare_chat_files
 from relay.errors import ApiError
 from relay.storage import ChannelStorage, StorageError, TEXT_BYTES
-from relay.uploads import MAX_FILES, PNG_BYTES, MAX_UPLOAD_REQUEST, UploadError, is_png
+from relay.uploads import MAX_FILES, MAX_FILE_BYTES, MAX_UPLOAD_REQUEST, UploadError, UploadStore, upload_policy, validate_file
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, LEGACY_MAX_WAIT_SECONDS, MCP_VERSION, LEGACY_PNG_PROMPT
 from relay.settings import APP_NAME, LANGUAGES, LISTEN_HOST, LOOPBACK, Settings
 
@@ -53,6 +53,7 @@ class Room:
     def __init__(self, db_path: Path):
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.storage = ChannelStorage(db_path.parent)
+        self.uploads = UploadStore(db_path.parent / 'uploads')
         self.db = sqlite3.connect(db_path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript("""
@@ -140,11 +141,17 @@ class Room:
         self._notify()
 
     def publish_board_post(self, payload):
-        post_data = prepare_post(payload)
-        with self.changed:
-            post, published = self.board.create(*post_data)
-            if published:
-                self._notify_board()
+        with self.uploads.lock, self.changed:
+            request_id = payload.get('request_id')
+            existing = self.db.execute('SELECT id FROM board_posts WHERE request_id=?',
+                                       (request_id if isinstance(request_id, str) else None,)).fetchone()
+            if existing:
+                post = self.board.post(existing['id'])
+            else:
+                post, published = self.board.create(*prepare_post(payload, self.uploads))
+                if published:
+                    self._notify_board()
+            self.uploads.discard(payload.get('attachments', payload.get('images', [])))
             return post
 
     def list_board_posts(self, before):
@@ -464,10 +471,16 @@ class Room:
         return self.chat_files.attach_metadata((message,))[0]
 
     def post(self, payload):
+        with self.uploads.lock:
+            result = self._post(payload)
+            self.uploads.discard(payload.get('attachments', []))
+            return result
+
+    def _post(self, payload):
         sender = payload.get("sender")
-        files = prepare_chat_files(payload.get('attachments', []))
+        attachments = payload.get('attachments', [])
         body = payload.get("body", "")
-        if not isinstance(body, str) or len(body.strip()) > TEXT_LIMIT or (not body.strip() and not files):
+        if not isinstance(body, str) or len(body.strip()) > TEXT_LIMIT or (not body.strip() and not attachments):
             raise RequestError("메시지는 1~10,000자로 입력하거나 파일을 첨부하세요.", key='errorMessageBody')
         try:
             body.encode('utf-8')
@@ -495,6 +508,7 @@ class Room:
                         raise RequestError('메시지를 받을 에이전트를 먼저 추가하세요.', 409, key='errorAddAgentFirst')
                 elif self._participant(recipient) is None:
                     raise RequestError('보낼 대상을 선택하세요.', key='errorChooseRecipient')
+                files = prepare_chat_files(attachments, self.uploads)
                 with self.db:
                     message = self._insert(channel_id, sender, recipient, body.strip(), files=files, request_id=request_id)
             elif self._participant(sender) is not None:
@@ -514,6 +528,7 @@ class Room:
                 if existing:
                     return {"message": self.chat_files.attach_metadata((existing,))[0], "duplicate": True}
                 channel_id = original['channel_id']
+                files = prepare_chat_files(attachments, self.uploads)
                 body, shared_files = self._shared_png_reply(channel_id, body, len(files))
                 files.extend(shared_files)
                 recipient = payload.get('next_agent') if handoff else None
@@ -540,7 +555,7 @@ class Room:
         if not paths:
             return body, []
         if file_count + len(paths) > MAX_FILES:
-            raise UploadError('PNG 파일은 최대 4개까지 첨부할 수 있습니다.')
+            raise UploadError('파일은 최대 30개까지 첨부할 수 있습니다.', key='attachmentLimit')
         root = Path(self._channel(channel_id)['folder'])
         attachments = []
         for relative in reversed(paths):
@@ -551,14 +566,10 @@ class Room:
                 if not path.is_file():
                     raise OSError
                 with path.open('rb') as handle:
-                    data = handle.read(PNG_BYTES + 1)
+                    data = handle.read(MAX_FILE_BYTES + 1)
             except OSError:
                 raise UploadError(f'shared에서 PNG 파일을 열 수 없습니다: {path.name}', 404) from None
-            if len(data) > PNG_BYTES:
-                raise UploadError('PNG 파일은 파일당 4 MiB까지 첨부할 수 있습니다.', 413)
-            if not is_png(data):
-                raise UploadError(f'PNG 파일의 형식을 확인하세요: {path.name}', 415)
-            attachments.append((path.name, 'image/png', data))
+            attachments.append(validate_file(path.name, data))
         return '\n'.join(lines).strip(), attachments
 
     def wait_result(self, agent, seconds, channel_id=None, runner=None, client_version=None):
@@ -655,6 +666,7 @@ class Handler(BaseHTTPRequestHandler):
     static = {
         "/": ("index.html", "text/html; charset=utf-8"),
         "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
+        "/uploads.js": ("uploads.js", "text/javascript; charset=utf-8"),
         "/app.js": ("app.js", "text/javascript; charset=utf-8"),
         "/board.js": ("board.js", "text/javascript; charset=utf-8"),
         "/style.css": ("style.css", "text/css; charset=utf-8"),
@@ -702,6 +714,12 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, data, status=200):
         self._bytes(status, json.dumps(data, ensure_ascii=False).encode("utf-8"),
                     "application/json; charset=utf-8")
+
+    def _attachment(self, attachment, download=False):
+        mime = attachment['mime_type']
+        preview = mime in ('image/png', 'image/jpeg', 'image/gif', 'image/webp', 'video/mp4')
+        name = attachment['name'] if download or not preview else None
+        self._bytes(200, attachment['data'], mime, download_name=name)
 
     def _download(self, channel_id, kind, relative):
         handle, name = self.room.channel_files(channel_id, kind, relative, download=True)
@@ -778,7 +796,10 @@ class Handler(BaseHTTPRequestHandler):
             url = urlsplit(self.path)
             params = parse_qs(url.query)
             channel_id = params.get('channel', [None])[0]
-            if url.path in self.static:
+            if url.path == '/upload-policy.js':
+                code = 'const uploadPolicy = Object.freeze(' + json.dumps(upload_policy()) + ');'
+                self._bytes(200, code.encode('utf-8'), 'text/javascript; charset=utf-8')
+            elif url.path in self.static:
                 filename, content_type = self.static[url.path]
                 self._bytes(200, files("relay.web").joinpath(filename).read_bytes(), content_type)
             elif url.path == "/api/health":
@@ -814,14 +835,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.room.list_board_posts(self._number(params, 'before')))
             elif url.path == '/api/board/post':
                 self._json(self.room.read_board_post(self._number(params, 'id')))
-            elif url.path == '/api/board/image':
+            elif url.path in ('/api/board/image', '/api/board/attachment'):
                 image = self.room.board_image(self._number(params, 'id'))
-                self._bytes(200, image['data'], image['mime_type'])
+                self._attachment(image, params.get('download') == ['1'])
             elif url.path == '/api/messages/attachment':
                 agent = params.get('agent', [None])[0]
                 attachment = self.room.chat_attachment(self._number(params, 'id'), agent)
-                mime = attachment['mime_type']
-                self._bytes(200, attachment['data'], 'text/plain; charset=utf-8' if mime == 'text/plain' else mime)
+                self._attachment(attachment, params.get('download') == ['1'])
             elif url.path == "/api/wait":
                 try:
                     seconds = int(params.get("seconds", [str(DEFAULT_WAIT_SECONDS)])[0])
@@ -845,6 +865,17 @@ class Handler(BaseHTTPRequestHandler):
             self._check_local(files_write=self.path in ('/api/channels/folder', '/api/channels/open', '/api/shared/write'))
             self.connection.settimeout(8)
             self.close_connection = True
+            url = urlsplit(self.path)
+            if url.path == '/api/uploads':
+                if self.headers.get_content_type() != 'application/octet-stream' or self.headers.get('X-Local-Relay') != '1':
+                    raise RequestError('첨부 요청 헤더를 확인하세요.', 415, key='errorRequestHeaders')
+                sizes = self.headers.get_all('Content-Length', [])
+                if self.headers.get('Transfer-Encoding') or len(sizes) != 1 or len(sizes[0]) > 12 or not sizes[0].isascii() or not sizes[0].isdigit():
+                    raise RequestError('첨부 파일 크기를 확인하세요.', key='errorUpload')
+                self.connection.settimeout(60)
+                name = parse_qs(url.query).get('name', [''])[0]
+                self._json(self.room.uploads.stage(self.rfile, int(sizes[0]), name), 201)
+                return
             if self.headers.get_content_type() != "application/json" or self.headers.get("X-Local-Relay") != "1":
                 raise RequestError("채팅방 요청 헤더를 확인하세요.", 415, key='errorRequestHeaders')
             try:
@@ -861,7 +892,14 @@ class Handler(BaseHTTPRequestHandler):
                 raise RequestError("올바른 JSON 본문이 필요합니다.", key='errorRequestJson') from None
             if not isinstance(payload, dict):
                 raise RequestError("JSON 객체가 필요합니다.", key='errorRequestObject')
-            if self.path == "/api/messages":
+            if self.path == '/api/uploads/discard':
+                items = payload.get('attachments')
+                if not isinstance(items, list) or len(items) > MAX_FILES:
+                    raise RequestError('첨부 목록을 확인하세요.', key='errorUpload')
+                with self.room.uploads.lock:
+                    self.room.uploads.discard(items)
+                self._json({'discarded': True})
+            elif self.path == "/api/messages":
                 self._json(self.room.post(payload))
             elif self.path == '/api/settings/language':
                 try:

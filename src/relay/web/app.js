@@ -78,15 +78,6 @@ function showMessage(id, message) {
   target.hidden = !message;
 }
 
-function readUpload(file, name = file.name) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => resolve({ name, data: reader.result.split(",")[1] }));
-    reader.addEventListener("error", () => reject(new Error(t("uploadReadFailed"))));
-    reader.readAsDataURL(file);
-  });
-}
-
 function refreshControls() {
   const ready = live && current;
   el("add-agent").disabled = !ready;
@@ -225,18 +216,10 @@ function messageAttachments(attachments) {
     name.href = address;
     name.target = "_blank";
     name.rel = "noopener";
-    if (file.mime_type === "image/png") {
-      const preview = name.cloneNode(false);
-      preview.className = "attachment-preview";
-      const image = element("img");
-      image.src = address;
-      image.alt = file.name;
-      image.loading = "lazy";
-      preview.append(image);
-      item.append(preview);
-    }
+    const preview = attachmentPreview(file, address);
+    if (preview) item.append(preview);
     const download = element("a", "attachment-download", t("download"));
-    download.href = address;
+    download.href = address + "&download=1";
     download.download = file.name;
     download.setAttribute("aria-label", t("downloadFile", { name: file.name }));
     item.append(name, download);
@@ -376,35 +359,12 @@ function showChatFiles() {
   chatFileList.hidden = !rows.length;
 }
 
-function addChatFiles(incoming, pasted = false) {
+function addChatFiles(incoming) {
   if (!incoming.length || sending) return;
-  const next = [...chatFiles];
-  let failure = "";
-  for (const file of incoming) {
-    if (next.length === 4) {
-      failure = t("attachmentLimit");
-      break;
-    }
-    const name = pasted && !/\.png$/i.test(file.name) ? t("pastedImage") : file.name;
-    if (/\.md$/i.test(name)) {
-      if (file.size > 256 * 1024) {
-        failure = t("mdLimit");
-        continue;
-      }
-    } else if (/\.png$/i.test(name)) {
-      if (!file.size || file.size > 4 * 1024 * 1024) {
-        failure = t("pngLimit");
-        continue;
-      }
-    } else {
-      failure = t("attachMdPng");
-      continue;
-    }
-    next.push({ file, name });
-  }
-  if (next.length !== chatFiles.length) chatDraftId = null;
-  chatFiles = next;
-  showMessage("form-error", failure);
+  const { files, error } = selectUploads(chatFiles, incoming);
+  if (files.length !== chatFiles.length) chatDraftId = null;
+  chatFiles = files;
+  showMessage("form-error", error);
   showChatFiles();
   refreshControls();
 }
@@ -415,10 +375,10 @@ chatFileInput.addEventListener("change", () => {
   chatFileInput.value = "";
 });
 el("composer").addEventListener("paste", (event) => {
-  const png = Array.from(event.clipboardData?.files || []).filter((file) => file.type === "image/png");
-  if (png.length && !sending) {
+  const pasted = Array.from(event.clipboardData?.files || []);
+  if (pasted.length && !sending) {
     event.preventDefault();
-    addChatFiles(png, true);
+    addChatFiles(pasted);
   }
 });
 function chatDraftChanged() {
@@ -444,8 +404,9 @@ el("composer").addEventListener("submit", async (event) => {
   const target = recipient.value;
   chatDraftId ||= draftId();
   const requestId = chatDraftId;
+  let attachments = [];
   try {
-    const attachments = await Promise.all(chatFiles.map(({ file, name }) => readUpload(file, name)));
+    attachments = await uploadFiles(chatFiles, (index, total) => showMessage("chat-upload-progress", t("uploadProgress", { index, total })));
     await request("/api/messages", {
       sender: "user", recipient: target, body, channel_id: selectedChannel, request_id: requestId, attachments,
     });
@@ -463,6 +424,8 @@ el("composer").addEventListener("submit", async (event) => {
   } catch (error) {
     if (activeChannel === selectedChannel) showMessage("form-error", error.message);
   } finally {
+    await discardUploads(attachments);
+    showMessage("chat-upload-progress", "");
     sending = false;
     refreshControls();
   }

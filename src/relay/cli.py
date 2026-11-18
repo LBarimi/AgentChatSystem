@@ -1,5 +1,4 @@
 import argparse
-from base64 import b64encode
 from configparser import Error as ConfigError
 from http.client import HTTPException
 import json
@@ -16,7 +15,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, MCP_TOOL_TIMEOUT_SECONDS, MCP_VERSION
 from relay.prompts import render_connection_prompts
 from relay.settings import APP_NAME, ARCHIVE, LISTEN_HOST, LOOPBACK, PROJECT, Settings
-from relay.uploads import MAX_FILES, PNG_BYTES, is_png
+from relay.uploads import MAX_FILES, UploadError, upload_name, upload_size
 
 
 class RelayError(Exception):
@@ -26,40 +25,16 @@ class RelayError(Exception):
         self.status = status
 
 
-def png_uploads(paths):
-    if not isinstance(paths, list) or len(paths) > MAX_FILES:
-        raise RelayError('PNG 파일은 최대 4개까지 첨부할 수 있습니다.')
-    uploads = []
-    for value in paths:
-        if not isinstance(value, str) or not value.strip():
-            raise RelayError('첨부할 PNG 파일의 절대 경로를 입력하세요.')
-        path = Path(value)
-        if not path.is_absolute() or path.suffix.lower() != '.png':
-            raise RelayError('첨부할 PNG 파일의 절대 경로를 입력하세요.')
-        try:
-            if not path.is_file():
-                raise OSError
-            with path.open('rb') as handle:
-                data = handle.read(PNG_BYTES + 1)
-        except OSError:
-            raise RelayError(f'PNG 파일을 열 수 없습니다: {path.name}') from None
-        if len(data) > PNG_BYTES:
-            raise RelayError('PNG 파일은 파일당 4 MiB까지 첨부할 수 있습니다.')
-        if not is_png(data):
-            raise RelayError(f'PNG 파일의 형식을 확인하세요: {path.name}')
-        uploads.append({'name': path.name, 'data': b64encode(data).decode('ascii')})
-    return uploads
-
-
 class Client:
     def __init__(self, port):
         self.url = f"http://{LOOPBACK}:{port}"
         self.opener = build_opener(ProxyHandler({}))
 
-    def call(self, route, payload=None, timeout=8, *, binary=False):
-        data = None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    def call(self, route, payload=None, timeout=8, *, binary=False, raw=None, size=None):
+        data = raw if raw is not None else (None if payload is None else json.dumps(payload, ensure_ascii=False).encode("utf-8"))
         request = Request(self.url + route, data=data, headers={
-            "Content-Type": "application/json", "X-Local-Relay": "1",
+            "Content-Type": "application/octet-stream" if raw is not None else "application/json", "X-Local-Relay": "1",
+            **({"Content-Length": str(size)} if raw is not None else {}),
             "X-Local-Relay-Client": MCP_VERSION,
             **({'X-Relay-Runner': os.environ['LOCAL_RELAY_RUN_ID']} if os.environ.get('LOCAL_RELAY_RUN_ID') else {}),
         })
@@ -73,6 +48,8 @@ class Client:
                 message = json.loads(exc.read())["error"]
             except (ValueError, KeyError):
                 message = f"HTTP {exc.code}"
+            finally:
+                exc.close()
             raise RelayError(message, retryable=500 <= exc.code <= 599, status=exc.code) from exc
         except (URLError, OSError, HTTPException, json.JSONDecodeError) as exc:
             raise RelayError(
@@ -105,19 +82,50 @@ class Client:
                     }
                 sleep(min(2, left))
 
+    def upload_files(self, paths):
+        if not isinstance(paths, list) or len(paths) > MAX_FILES:
+            raise RelayError('파일은 최대 30개까지 첨부할 수 있습니다.')
+        attachments = []
+        try:
+            for value in paths:
+                if not isinstance(value, str) or not Path(value).is_absolute():
+                    raise RelayError('첨부할 파일의 절대 경로를 입력하세요.')
+                path = Path(value)
+                upload_name(path.name)
+                with path.open('rb') as handle:
+                    size = os.fstat(handle.fileno()).st_size
+                    upload_size(size)
+                    attachments.append(self.call('/api/uploads?' + urlencode({'name': path.name}),
+                                                 raw=handle, size=size, timeout=60))
+            return attachments
+        except (OSError, UploadError, RelayError) as error:
+            self.discard_uploads(attachments)
+            raise RelayError(str(error)) from error
+
+    def discard_uploads(self, attachments):
+        if attachments:
+            try:
+                self.call('/api/uploads/discard', {'attachments': attachments}, timeout=3)
+            except RelayError:
+                pass
+
     def reply(self, agent, message_id, body, handoff, next_agent=None, *, attachments=None):
+        staged = self.upload_files([] if attachments is None else attachments)
         payload = {
             "sender": agent, "reply_to": message_id, "body": body, "handoff": handoff, "next_agent": next_agent,
-            "attachments": png_uploads([] if attachments is None else attachments),
+            "attachments": staged,
         }
-        for attempt in range(3):
-            try:
-                return self.call("/api/messages", payload)
-            except RelayError as error:
-                if not error.retryable or attempt == 2:
-                    raise
-                # Each message accepts one reply per sender, so a repeated send is safe.
-                sleep(1)
+        try:
+            for attempt in range(3):
+                try:
+                    return self.call("/api/messages", payload, timeout=60)
+                except RelayError as error:
+                    if not error.retryable or attempt == 2:
+                        raise
+                    # Each message accepts one reply per sender, so a repeated send is safe.
+                    sleep(1)
+        finally:
+            self.discard_uploads(staged)
 
 
 def parser():
@@ -151,7 +159,7 @@ def parser():
             text = action.add_mutually_exclusive_group()
             text.add_argument("--file", type=Path, help="UTF-8 답변 파일. 생략 시 표준 입력.")
             text.add_argument('--body', help='답변 본문 또는 PNG 설명')
-            action.add_argument('--attach', dest='attachments', action='append', default=[], help='첨부할 PNG의 절대 경로. 최대 4번 사용.')
+            action.add_argument('--attach', dest='attachments', action='append', default=[], help='첨부할 파일의 절대 경로. 개당 10 MB, 최대 30번 사용.')
             action.add_argument('--next', dest='next_agent', help='이 답변을 받을 에이전트 ID')
     config = sub.add_parser("config", help="Codex/Claude MCP 설정 예시 출력")
     config.add_argument('--agent', help='등록된 에이전트 ID. 생략 시 기본 두 에이전트 출력.')

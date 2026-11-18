@@ -7,6 +7,8 @@
   <title>AgentChatSystem — 작업실</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/i18n.js" defer></script>
+  <script src="/upload-policy.js" defer></script>
+  <script src="/uploads.js" defer></script>
   <script src="/app.js" defer></script>
   <script src="/board.js" defer></script>
 </head>
@@ -87,11 +89,12 @@
           <label for="body" class="sr-only" data-i18n="taskMessage">작업 메시지</label>
           <textarea id="body" placeholder="에이전트에게 보낼 작업을 입력하세요" data-i18n-placeholder="taskPlaceholder" maxlength="10000" rows="3"></textarea>
           <ul class="chat-file-list" id="chat-file-list" aria-label="첨부할 파일" data-i18n-aria-label="attachments" hidden></ul>
-          <input id="chat-file-input" type="file" accept=".md,.png,image/png" multiple hidden>
+          <input id="chat-file-input" type="file" multiple hidden>
+          <p class="upload-progress" id="chat-upload-progress" role="status" hidden></p>
           <div class="composer-bar">
             <div class="composer-fields">
-              <button class="button attach-button" id="chat-attach" type="button" title="MD 또는 PNG 파일 첨부" data-i18n-title="attachTitle" disabled><svg class="icon"><use href="/vendor/icons.svg#link"></use></svg><span data-i18n="attach">첨부</span></button>
-              <label class="select-field"><span data-i18n="recipient">보낼 대상</span><select id="recipient" required aria-label="보낼 대상" data-i18n-aria-label="recipient"></select></label>
+              <button class="button attach-button" id="chat-attach" type="button" title="파일 첨부: 개당 10 MB, 최대 30개" data-i18n-title="attachTitle" disabled><svg class="icon"><use href="/vendor/icons.svg#link"></use></svg><span data-i18n="attach">첨부</span></button>
+              <label class="select-field"><span data-i18n="recipient">보낼 대상</span><select id="recipient" required aria-label="보낼 대상" data-i18n-aria-label="recipient"><option value="all" selected data-i18n="all">모두</option></select></label>
             </div>
             <button class="button primary send" id="send" type="submit" disabled><span data-i18n="send">보내기</span><svg class="icon"><use href="/vendor/icons.svg#send"></use></svg></button>
           </div>
@@ -172,9 +175,10 @@
       <label><span data-i18n="title">제목</span><input id="board-title-input" maxlength="100" required></label>
       <label><span data-i18n="body">본문</span><textarea id="board-body-input" maxlength="10000" rows="7" placeholder="새 지침이나 변경사항을 작성하세요" data-i18n-placeholder="postPlaceholder"></textarea></label>
       <div class="board-attachment-field">
-        <label><span data-i18n="attachImages">이미지 첨부</span><input id="board-file" type="file" multiple accept="image/png,image/jpeg,image/webp"></label>
-        <p data-i18n="imageHint">이미지 붙여넣기도 됩니다. PNG · JPG · WebP, 최대 4장, 장당 4 MiB</p>
-        <ul class="board-files" id="board-files" aria-label="첨부할 이미지" data-i18n-aria-label="imagesToAttach"></ul>
+        <label><span data-i18n="attachments">첨부할 파일</span><input id="board-file" type="file" multiple></label>
+        <p data-i18n="attachmentHint">PNG · JPG · TXT · CSV · XLSX · XLSM · JSON · XML · PDF · PPTX · MP4 · GIF, 개당 10 MB, 최대 30개</p>
+        <ul class="board-files" id="board-files" aria-label="첨부할 파일" data-i18n-aria-label="attachments"></ul>
+        <p class="upload-progress" id="board-upload-progress" role="status" hidden></p>
       </div>
       <p class="form-error" id="board-form-error" role="alert" hidden></p>
       <footer><button class="button secondary" type="button" data-close="board-write-dialog" data-i18n="cancel">취소</button><button class="button primary" id="board-publish" type="submit" data-i18n="publish">게시하기</button></footer>

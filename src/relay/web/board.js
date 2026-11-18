@@ -5,7 +5,6 @@ const boardForm = el("board-form");
 const boardFile = el("board-file");
 const boardList = el("board-list");
 const boardPost = el("board-post");
-const maxBoardImageBytes = 4 * 1024 * 1024;
 const boardFiles = [];
 const boardPages = [];
 let boardRequest = 0;
@@ -57,7 +56,7 @@ function boardCard(post) {
   if (post.excerpt) card.append(element("span", "board-excerpt", post.excerpt));
   const meta = element("span", "board-meta");
   meta.append(boardDate(post.created_at));
-  if (post.image_count) meta.append(element("span", "", t("imageCount", { count: post.image_count })));
+  if (post.image_count) meta.append(element("span", "", t("attachmentCount", { count: post.image_count })));
   meta.append(element("span", "", t("agentReads", { read: post.read_count, total: post.recipient_count })));
   card.append(meta);
   item.append(card);
@@ -73,18 +72,18 @@ function renderBoardPost(post) {
   if (post.body) nodes.push(element("p", "board-post-body", post.body));
   if (post.images.length) {
     const gallery = element("div", "board-gallery");
-    for (const image of post.images) {
+    for (const file of post.images) {
       const figure = element("figure");
-      const original = element("a");
-      original.href = "/api/board/image?id=" + image.id;
-      original.target = "_blank";
-      original.rel = "noopener";
-      const preview = element("img");
-      preview.src = original.href;
-      preview.alt = image.name;
-      preview.loading = "lazy";
-      original.append(preview);
-      figure.append(original, element("figcaption", "", image.name));
+      const address = "/api/board/attachment?id=" + file.id;
+      const preview = attachmentPreview(file, address);
+      if (preview) figure.append(preview);
+      const caption = element("figcaption", "");
+      const download = element("a", "attachment-download", t("download"));
+      download.href = address + "&download=1";
+      download.download = file.name;
+      download.setAttribute("aria-label", t("downloadFile", { name: file.name }));
+      caption.append(element("span", "", file.name + " "), download);
+      figure.append(caption);
       gallery.append(figure);
     }
     nodes.push(gallery);
@@ -197,11 +196,11 @@ boardList.addEventListener("click", (event) => {
 });
 
 function showBoardFiles() {
-  const rows = boardFiles.map((file, index) => {
+  const rows = boardFiles.map(({ name }, index) => {
     const row = element("li");
     const remove = element("button", "button icon-button");
     remove.type = "button";
-    remove.setAttribute("aria-label", t("removeAttachment", { name: file.name }));
+    remove.setAttribute("aria-label", t("removeAttachment", { name }));
     remove.append(icon("x"));
     remove.addEventListener("click", () => {
       if (boardPosting) return;
@@ -209,7 +208,7 @@ function showBoardFiles() {
       boardDraftId = null;
       showBoardFiles();
     });
-    row.append(element("span", "", file.name), remove);
+    row.append(element("span", "", name), remove);
     return row;
   });
   el("board-files").replaceChildren(...rows);
@@ -226,20 +225,10 @@ document.addEventListener("languagechange", () => {
 
 function attachBoardFiles(incoming) {
   if (boardPosting || !incoming.length) return;
-  showMessage("board-form-error", "");
-  for (const file of incoming) {
-    if (boardFiles.length >= 4) {
-      showMessage("board-form-error", t("boardImageLimit"));
-      break;
-    }
-    const supported = /^(image\/(png|jpeg|webp))$/.test(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name);
-    if (!file.size || file.size > maxBoardImageBytes || !supported) {
-      showMessage("board-form-error", t("boardImageTypes"));
-      continue;
-    }
-    boardDraftId = null;
-    boardFiles.push(file);
-  }
+  const { files, error } = selectUploads(boardFiles, incoming);
+  if (files.length !== boardFiles.length) boardDraftId = null;
+  boardFiles.splice(0, boardFiles.length, ...files);
+  showMessage("board-form-error", error);
   showBoardFiles();
 }
 
@@ -256,7 +245,7 @@ boardFile.addEventListener("change", () => {
   boardFile.value = "";
 });
 boardDialog.addEventListener("paste", (event) => {
-  const pictures = Array.from(event.clipboardData?.files || []).filter((file) => file.type.startsWith("image/"));
+  const pictures = Array.from(event.clipboardData?.files || []);
   if (pictures.length) {
     event.preventDefault();
     attachBoardFiles(pictures);
@@ -277,9 +266,10 @@ boardForm.addEventListener("submit", async (event) => {
   showMessage("board-form-error", "");
   boardDraftId ||= draftId();
   const requestId = boardDraftId;
+  let attachments = [];
   try {
-    const images = await Promise.all(boardFiles.map((file) => readUpload(file, file.name || t("attachedImage"))));
-    const post = await request("/api/board", { request_id: requestId, title, body, images });
+    attachments = await uploadFiles(boardFiles, (index, total) => showMessage("board-upload-progress", t("uploadProgress", { index, total })));
+    const post = await request("/api/board", { request_id: requestId, title, body, attachments });
     if (boardDraftId === requestId) {
       boardDialog.close();
       boardDraftId = null;
@@ -292,6 +282,8 @@ boardForm.addEventListener("submit", async (event) => {
   } catch (error) {
     showMessage("board-form-error", error.message);
   } finally {
+    await discardUploads(attachments);
+    showMessage("board-upload-progress", "");
     boardPosting = false;
     el("board-publish").disabled = false;
   }
