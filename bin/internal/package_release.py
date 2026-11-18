@@ -68,6 +68,7 @@ OTHER_FILES = (
     'bin/internal/relay.sh',
     'bin/start.cmd',
     'bin/start.sh',
+    'bin/settings.example.ini',
     'bin/internal/stop.cmd',
     'media/readme/chat.png',
     'media/readme/board.png',
@@ -108,7 +109,7 @@ def package():
             target.write_bytes(source.read_bytes())
 
         # A release starts with default settings, regardless of this installation's preferences.
-        (stage / 'bin/settings.ini').write_text('[server]\nport = 9081\n\n[ui]\nlanguage = auto\n', encoding='utf-8')
+        (stage / 'bin/settings.ini').write_bytes((stage / 'bin/settings.example.ini').read_bytes())
         zipapp.create_archive(stage / 'src', stage / RUNTIME, compressed=True)
         with ZipFile(stage / RUNTIME) as runtime:
             for name in runtime.namelist():

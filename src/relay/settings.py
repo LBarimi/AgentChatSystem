@@ -7,6 +7,7 @@ from relay.storage import atomic_text
 
 APP_NAME = 'AgentChatSystem'
 DEFAULT_PORT = 9081
+DEFAULT_SETTINGS = '[server]\nport = 9081\n\n[ui]\nlanguage = auto\n'
 LOOPBACK = '127.0.0.1'
 LANGUAGES = ('ko', 'ja', 'en', 'zh-CN', 'zh-TW', 'ru', 'de')
 MODULE = Path(__file__).resolve()
@@ -21,6 +22,13 @@ class Settings:
         self.lock = Lock()
 
     def _read(self):
+        if not self.path.exists():
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with self.path.open('x', encoding='utf-8', newline='\n') as handle:
+                    handle.write(DEFAULT_SETTINGS)
+            except FileExistsError:
+                pass
         config = ConfigParser(interpolation=None)
         config.read(self.path, encoding='utf-8-sig')
         return config
