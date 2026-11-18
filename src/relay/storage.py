@@ -3,7 +3,10 @@ import json
 import os
 from pathlib import Path, PureWindowsPath
 import shutil
+import subprocess
+import sys
 from tempfile import NamedTemporaryFile
+from threading import Thread
 
 from relay.errors import ApiError
 
@@ -49,11 +52,15 @@ class ChannelStorage:
         if not value:
             return self.root / channel_id
         path = Path(value)
-        if not path.is_absolute() or (os.name == 'nt' and (len(path.drive) != 2 or path.drive[1] != ':')):
+        if os.name == 'nt' and (not path.is_absolute() or len(path.drive) != 2 or path.drive[1] != ':'):
             raise StorageError('드라이브 문자로 시작하는 로컬 폴더의 절대 경로를 입력하세요.', key='errorLocalFolder')
+        if not path.is_absolute():
+            raise StorageError('폴더의 절대 경로를 입력하세요.', key='errorAbsolutePath')
         if any(
-            not part.isprintable() or any(char in part for char in '<>:"|?*')
-            or (part != '..' and part.endswith(('.', ' '))) or PureWindowsPath(part).is_reserved()
+            not part.isprintable() or (os.name == 'nt' and (
+                any(char in part for char in '<>:"|?*')
+                or (part != '..' and part.endswith(('.', ' '))) or PureWindowsPath(part).is_reserved()
+            ))
             for part in path.parts[1:]
         ):
             raise StorageError('폴더 경로에 사용할 수 없는 이름이 있습니다.', key='errorFolderName')
@@ -131,9 +138,22 @@ class ChannelStorage:
     def open_folder(self, root, kind):
         path = self.folder(root, kind)
         try:
-            os.startfile(path, 'explore')
-        except (AttributeError, OSError):
-            raise StorageError(f'탐색기를 열 수 없습니다. 이 경로를 복사하세요. {path}', 503,
+            if os.name == 'nt':
+                os.startfile(path, 'explore')
+            else:
+                opener = 'open' if sys.platform == 'darwin' else 'xdg-open'
+                process = subprocess.Popen([opener, str(path)], stdin=subprocess.DEVNULL,
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                           start_new_session=True)
+                try:
+                    result = process.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    Thread(target=process.wait, daemon=True).start()
+                else:
+                    if result:
+                        raise OSError(f'{opener} exited with status {result}')
+        except OSError:
+            raise StorageError(f'파일 관리자를 열 수 없습니다. 이 경로를 복사하세요. {path}', 503,
                                key='errorOpenFolder', path=str(path)) from None
         return {'path': str(path)}
 

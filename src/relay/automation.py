@@ -66,18 +66,19 @@ def session_status(path, role, identity=None):
 
 def executable(role):
     direct = shutil.which('codex' if role == 'codex' else 'claude')
-    if direct and Path(direct).suffix.lower() == '.exe':
-        return direct
-    local = Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local')
-    pattern = (
-        'OpenAI/Codex/bin/*/codex.exe' if role == 'codex'
-        else 'Claude-Data/claude_pzs8sxrjxfjjc/claude-code/*/*/claude.exe'
-    )
-    options = sorted(local.glob(pattern), key=lambda path: path.stat().st_mtime, reverse=True)
-    if not options:
-        raise ApiError(f'설치된 {role} 실행 파일을 찾을 수 없습니다.', 409,
-                       key='errorResumeExecutable', app=role)
-    return str(options[0])
+    if direct and (os.name != 'nt' or Path(direct).suffix.lower() == '.exe'):
+        return str(Path(direct).absolute())
+    if os.name == 'nt':
+        local = Path(os.environ.get('LOCALAPPDATA') or Path.home() / 'AppData' / 'Local')
+        pattern = (
+            'OpenAI/Codex/bin/*/codex.exe' if role == 'codex'
+            else 'Claude-Data/claude_pzs8sxrjxfjjc/claude-code/*/*/claude.exe'
+        )
+        fallback = max(local.glob(pattern), key=lambda path: path.stat().st_mtime, default=None)
+        if fallback:
+            return str(fallback)
+    raise ApiError(f'설치된 {role} 실행 파일을 찾을 수 없습니다.', 409,
+                   key='errorResumeExecutable', app=role)
 
 
 def candidates(role, agent):
@@ -271,7 +272,7 @@ class Automation:
         environment = dict(os.environ, LOCAL_RELAY_RUN_ID=run_id)
         with output.open('w', encoding='utf-8') as log:
             with subprocess.Popen(args, cwd=config['cwd'], stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT,
-                                  env=environment,
+                                  env=environment, start_new_session=os.name != 'nt',
                                   creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0)) as process:
                 process.stdin.write(resume_prompt(agent, event).encode('utf-8'))
                 process.stdin.close()

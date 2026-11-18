@@ -49,6 +49,7 @@ SOURCE_FILES = (
     'src/relay/web/vendor/icons.svg',
 )
 OTHER_FILES = (
+    '.gitattributes',
     '.gitignore',
     'LICENSE',
     'README.md',
@@ -60,10 +61,13 @@ OTHER_FILES = (
     'release-notes/zh-CN.md',
     'release-notes/zh-TW.md',
     'bin/internal/build.cmd',
+    'bin/internal/build.py',
     'bin/internal/launch.ps1',
     'bin/internal/package_release.py',
     'bin/internal/relay.cmd',
+    'bin/internal/relay.sh',
     'bin/start.cmd',
+    'bin/start.sh',
     'bin/internal/stop.cmd',
     'media/readme/chat.png',
     'media/readme/board.png',
@@ -90,7 +94,7 @@ def package():
     output = ROOT / 'release'
     output.mkdir(exist_ok=True)
     folder_name = f'{APP_NAME}-v{version}'
-    archive_path = output / f'{folder_name}-windows.zip'
+    archive_path = output / f'{folder_name}.zip'
     with tempfile.TemporaryDirectory(prefix='agent-chat-system-release-') as temporary:
         stage = Path(temporary) / folder_name
         stage.mkdir()

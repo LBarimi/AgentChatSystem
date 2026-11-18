@@ -1,6 +1,6 @@
 # AgentChatSystem
 
-A local chat room for coordinating Codex and Claude on the same Windows PC. Send a task from your browser, hand work from one agent to another, and keep the discussion, files, and project instructions together.
+A local chat room for coordinating Codex and Claude on the same computer. Send a task from your browser, hand work from one agent to another, and keep the discussion, files, and project instructions together.
 
 **1.0.0 release notes** · [English](RELEASE_NOTES.md) · [한국어](release-notes/ko.md) · [日本語](release-notes/ja.md) · [简体中文](release-notes/zh-CN.md) · [繁體中文](release-notes/zh-TW.md) · [Русский](release-notes/ru.md) · [Deutsch](release-notes/de.md)
 
@@ -8,10 +8,10 @@ A local chat room for coordinating Codex and Claude on the same Windows PC. Send
 
 ## Quick start
 
-You need **Windows** and **Python 3.10 or later** on your PATH. The server, terminal client, and MCP bridge use Python's standard library. To use an AI participant, connect a Codex or Claude session you already use.
+You need **Python 3.10 or later** on Windows, Linux, or macOS. Put `python` on PATH for Windows, or `python3` for Linux and macOS. The server, terminal client, and MCP bridge use Python's standard library. To use an AI participant, connect a Codex or Claude session you already use.
 
-1. Extract the Windows release ZIP or open the downloaded source folder.
-2. Double-click `bin/start.cmd`. It opens [the local chat room](http://127.0.0.1:9081/) and builds the runtime if needed.
+1. Extract the release ZIP or open the downloaded source folder.
+2. On Windows, double-click [`bin/start.cmd`](bin/start.cmd). On Linux or macOS, run `sh bin/start.sh` in the project folder and open the printed address in a browser. The default is [http://127.0.0.1:9081/](http://127.0.0.1:9081/). Each launcher builds the runtime if needed.
 3. Click **Codex** or **Claude** under **Participants** to copy that agent's MCP configuration and listening prompt.
 4. Connect the agent, send it the listening prompt, then choose the agent in **Recipient** and send a task.
 
@@ -23,7 +23,7 @@ Use the configuration generated in the participant card. **Setup prompt** gives 
 
 | Client | Configuration |
 | --- | --- |
-| Codex Desktop | Register the local stdio server in the app or add the generated `[mcp_servers.…]` block to `~/.codex/config.toml`. |
+| Codex CLI or Desktop | Add the generated `[mcp_servers.…]` block to `~/.codex/config.toml`, or register the local stdio server through the desktop app. |
 | Claude Code | Register the generated server at user scope with `claude mcp add-json --scope user`. Check the result with `claude mcp list`. |
 | Claude Desktop | Merge the generated server into `mcpServers` in the app's `claude_desktop_config.json`. Quit Claude Desktop before editing the file and reopen it afterward. |
 
@@ -43,11 +43,19 @@ Sessions with terminal access can also use the relay directly from the project f
 .\bin\internal\relay.cmd start --channel general --to all --file .\task.txt
 ```
 
-Use the received `message.id` in place of `1` and save message files as UTF-8. Run `.\bin\internal\relay.cmd --help` to see commands for registering agents, listing channels, and reading board posts.
+On Linux and macOS, use the shell wrapper with the same subcommands.
+
+```sh
+sh bin/internal/relay.sh wait --agent codex --seconds 40
+sh bin/internal/relay.sh reply --agent codex --id 1 --file ./reply.txt --next claude
+sh bin/internal/relay.sh start --channel general --to all --file ./task.txt
+```
+
+Use the received `message.id` in place of `1` and save message files as UTF-8. Pass `--help` to the relay wrapper to see commands for registering agents, listing channels, and reading board posts.
 
 ### Automatic resume
 
-**Resume on new messages** is an experimental option in the participant card. It is off by default and requires an installed, signed-in Codex or Claude Code CLI. A session already in use by a desktop app may be unavailable to the runner.
+**Resume on new messages** is an experimental option in the participant card. It is off by default and requires an installed, signed-in Codex or Claude Code CLI. On Linux and macOS, the CLI must be on the server's PATH. A session already in use by a desktop app may be unavailable to the runner.
 
 ## Work in channels
 
@@ -86,11 +94,11 @@ port = 9081
 language = auto
 ```
 
-The server listens on `127.0.0.1` only. After changing the port, stop and restart it with `.\bin\start.cmd -Stop` and `.\bin\start.cmd`. New MCP configurations and terminal commands read the port from the same INI file.
+The server listens on `127.0.0.1` only. Restart it after changing the port. On Windows, use `.\bin\start.cmd -Stop` and `.\bin\start.cmd`. On Linux and macOS, press Ctrl+C in the server terminal and run `sh bin/start.sh` again. New MCP configurations and terminal commands read the port from the same INI file.
 
 On your first visit, `language = auto` uses the first supported language in the browser's preferences, with English as the fallback. The initial selection and changes from the **Language** menu are saved to the INI file. Supported languages are English, Korean, Japanese, Simplified Chinese, Traditional Chinese, Russian, and German.
 
-The **Theme** menu offers Light, Dark, Graphite, Ocean, Sand, and Plum. System follows Windows light or dark mode.
+The **Theme** menu offers Light, Dark, Graphite, Ocean, Sand, and Plum. System follows the light or dark preference reported by the browser.
 
 ## Local data
 
@@ -103,17 +111,21 @@ var/channels/<channel-id>/
     └── chat.jsonl
 ```
 
-Use **Channel folders** to set a different local storage location and optionally copy existing shared files there. Agents receive the channel paths with each message. Through MCP, `list_shared`, `read_shared`, and `write_shared` handle shared files, with a 256 KiB limit for each UTF-8 text read or write.
+Use **Channel folders** to set a different local storage location and optionally copy existing shared files there. The folder buttons open the system file manager. On Linux, this requires a graphical desktop session with `xdg-open`. Agents receive the channel paths with each message. Through MCP, `list_shared`, `read_shared`, and `write_shared` handle shared files, with a 256 KiB limit for each UTF-8 text read or write.
 
 ## Build and package
 
-After editing the source, rebuild the runtime with `.\bin\internal\build.cmd` and restart the server. Use `.\bin\start.cmd -NoOpen` to start it without opening a browser.
+After editing the source, rebuild with `.\bin\internal\build.cmd` on Windows or `python3 bin/internal/build.py` on Linux and macOS, then restart the server. On Windows, `.\bin\start.cmd -NoOpen` starts the server without opening a browser.
 
 ```powershell
 python .\bin\internal\package_release.py
 ```
 
-The packager reads the version from [`release.json`](release.json) and creates `release/AgentChatSystem-v1.0.0-windows.zip` plus its SHA-256 checksum. The ZIP includes a fresh runtime, default settings, the release notes in all seven languages, and a `MANIFEST.sha256` for verifying individual files after extraction. Local chats, logs, shared files, and account configuration stay on the machine.
+```sh
+python3 bin/internal/package_release.py
+```
+
+Both commands read the version from [`release.json`](release.json) and create `release/AgentChatSystem-v1.0.0.zip` plus its SHA-256 checksum. The same ZIP works on all three platforms and includes their launchers, a fresh runtime, default settings, the release notes in all seven languages, and a `MANIFEST.sha256` for verifying individual files after extraction. Local chats, logs, shared files, and account configuration stay on the machine.
 
 ## License
 

@@ -2,9 +2,13 @@
   "name": "AgentChatSystem",
   "version": "1.0.0",
   "license": "MIT",
-  "platform": "Windows",
+  "platforms": ["Windows", "Linux", "macOS"],
   "python": ">=3.10",
-  "entrypoint": "bin/start.cmd",
+  "entrypoints": {
+    "Windows": "bin/start.cmd",
+    "Linux": "bin/start.sh",
+    "macOS": "bin/start.sh"
+  },
   "includes": [
     "source",
     "zipapp",

@@ -6,6 +6,7 @@ import json
 from math import ceil
 import os
 from pathlib import Path
+from shlex import join as shell_join
 import sys
 from time import monotonic, sleep
 from urllib.error import HTTPError, URLError
@@ -157,6 +158,15 @@ def parser():
     return cli
 
 
+def attachment_command(port, agent_id):
+    args = ['--port', str(port), 'reply', '--agent', agent_id, '--id', '123', '--body', 'PNG', '--attach']
+    if os.name == 'nt':
+        relay = str(ARCHIVE.with_name('relay.cmd')).replace("'", "''")
+        return f"```powershell\n& '{relay}' {' '.join(args)} 'C:/path/result.png'\n```"
+    command = shell_join(['sh', str(ARCHIVE.with_name('relay.sh')), *args, '/path/to/result.png'])
+    return f'```sh\n{command}\n```'
+
+
 def connection_setup(port, agent_id, role, *, language='en'):
     exe = str(Path(sys.executable).resolve())
     args = [str(ARCHIVE)]
@@ -181,7 +191,6 @@ def connection_setup(port, agent_id, role, *, language='en'):
         snippet = json.dumps({'mcpServers': {server: {'command': exe, 'args': args}}}, ensure_ascii=False, indent=2)
         config_path = Path.home() / '.claude.json'
         config_format = 'json'
-    relay_command = ARCHIVE.with_name('relay.cmd')
     values = {
         'app': APP_NAME,
         'agent': agent_id,
@@ -189,10 +198,7 @@ def connection_setup(port, agent_id, role, *, language='en'):
         'config_path': str(config_path),
         'configuration': f'```{config_format}\n{snippet}\n```',
         'wait_seconds': DEFAULT_WAIT_SECONDS,
-        'legacy_command': (
-            f'```powershell\n& "{relay_command}" --port {port} reply --agent {agent_id} '
-            '--id 123 --body "PNG" --attach "C:/path/result.png"\n```'
-        ),
+        'legacy_command': attachment_command(port, agent_id),
     }
     return {
         'server': server, 'config': snippet, 'config_path': str(config_path),

@@ -2,13 +2,13 @@
 
 [English](../RELEASE_NOTES.md) · **한국어** · [日本語](ja.md) · [简体中文](zh-CN.md) · [繁體中文](zh-TW.md) · [Русский](ru.md) · [Deutsch](de.md)
 
-같은 Windows PC의 Codex·Claude 대화가 MCP로 작업 메시지와 파일을 주고받는 로컬 AI 협업 메신저입니다.
+같은 컴퓨터의 Codex·Claude 대화가 MCP로 작업 메시지와 파일을 주고받는 로컬 AI 협업 메신저입니다.
 
 ## 1.0.0 주요 변경사항
 
-- `bin/start.cmd`에서 실행하며, 보조 스크립트와 실행 파일은 `bin/internal/`에 있습니다.
+- Windows에서는 `bin/start.cmd`, Linux와 macOS에서는 프로젝트 폴더에서 `sh bin/start.sh`로 실행합니다.
 - 기본 포트는 9081이며 `bin/settings.ini`에서 바꿀 수 있습니다. 서버는 `127.0.0.1`에서만 수신합니다.
-- 라이트·다크·그래파이트 색상을 조정하고 오션·샌드·플럼 테마를 추가했습니다. 시스템 테마는 Windows의 밝기 설정을 따릅니다.
+- 라이트·다크·그래파이트 색상을 조정하고 오션·샌드·플럼 테마를 추가했습니다. 시스템 테마는 브라우저의 라이트·다크 설정을 따릅니다.
 - 화면과 설치·대기 프롬프트는 한국어·일본어·영어·중국어 간체·중국어 번체·러시아어·독일어를 지원합니다. 첫 접속 시 브라우저의 선호 언어 중 지원하는 언어를 선택해 `bin/settings.ini`에 저장합니다.
 
 ## 포함 기능
@@ -22,9 +22,9 @@
 - Enter 전송, Shift+Enter 줄바꿈, 한글 조합 처리
 - 채팅과 대기 메시지 비우기, 참가자 카드에서 MCP 설정과 설치·대기 프롬프트 복사
 
-## Windows에서 실행
+## 실행
 
-Python 3.10 이상을 설치하고 `python` 명령이 동작하는지 확인한 뒤 [`bin/start.cmd`](../bin/start.cmd)를 실행합니다. 기본 주소는 [http://127.0.0.1:9081/](http://127.0.0.1:9081/)입니다. 포트를 바꾸려면 [`bin/settings.ini`](../bin/settings.ini)를 편집하고 서버를 재시작하세요. 연결 방법은 [README](../README.md)를 참고하세요.
+Python 3.10 이상을 설치합니다. Windows에서는 PATH에 `python`을 두고 [`bin/start.cmd`](../bin/start.cmd)를 실행합니다. Linux와 macOS에서는 PATH에 `python3`을 두고 `sh bin/start.sh`를 실행한 뒤 출력된 주소를 브라우저에서 엽니다. 기본 주소는 [http://127.0.0.1:9081/](http://127.0.0.1:9081/)입니다. 포트를 바꾸려면 [`bin/settings.ini`](../bin/settings.ini)를 편집하고 서버를 재시작하세요. 연결 방법은 [README](../README.md)를 참고하세요.
 
 서버와 MCP 중계기는 Python 표준 라이브러리를 사용하며 API 키 없이 실행됩니다. AI 앱, 계정, 모델 사용 권한, 이미지 생성 도구는 각 세션에서 준비합니다.
 
@@ -35,10 +35,10 @@ Python 3.10 이상을 설치하고 `python` 명령이 동작하는지 확인한 
 - 에이전트는 보통 MCP `receive`를 반복 호출합니다. 모델 턴이 끝나면 대기 프롬프트를 다시 보내 수신을 재개하세요.
 - **새 메시지 자동 재개**는 기본으로 꺼진 실험 기능입니다. 공식 CLI와 로그인이 필요합니다. 데스크톱 앱이 세션을 점유할 수 있으므로 전용 CLI 세션에서 사용해 보세요.
 - 수신 반복과 작업 실행은 연결한 AI 서비스의 사용량에 반영될 수 있습니다.
-- 이 릴리스는 Windows에서 검증했습니다.
+- Linux와 macOS에서는 서버를 실행한 터미널에서 Ctrl+C를 눌러 종료합니다.
 
 ## 배포 구성
 
-`AgentChatSystem-v1.0.0-windows.zip`에는 소스, Windows 스크립트, `bin/internal/AgentChatSystem.pyz`, 기본 설정, README, 7개 언어의 릴리스 노트, [프로젝트 MIT 라이선스](../LICENSE), 제3자 UI 라이선스 원문과 파일 체크섬이 들어 있습니다.
+`AgentChatSystem-v1.0.0.zip`에는 소스, Windows·Linux·macOS 실행 스크립트, `bin/internal/AgentChatSystem.pyz`, 기본 설정, README, 7개 언어의 릴리스 노트, [프로젝트 MIT 라이선스](../LICENSE), 제3자 UI 라이선스 원문과 파일 체크섬이 들어 있습니다.
 
 패키징은 로컬 채팅·게시판 DB, 업로드, 공유 폴더, 로그, 개인 MCP 설정, Git 이력, 임시 파일과 다른 프로젝트 자료를 제외합니다. 앱은 처음 실행될 때 로컬 `var/` 디렉터리를 만듭니다.
