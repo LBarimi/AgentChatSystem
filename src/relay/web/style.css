@@ -283,13 +283,27 @@ kbd { font: inherit; background: var(--surface); border: 1px solid var(--border)
 .agents { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--cool); border-left: 1px solid var(--border); padding: 27px 16px 16px; }
 .agents-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px; }
 .agents h2 { display: flex; align-items: center; gap: 6px; font-weight: 740; font-size: 18px; letter-spacing: -.035em; }
-#agent-count { color: var(--primary); background: var(--primary-soft); border-radius: 6px; padding: 2px 6px; font-size: 11px; min-width: 20px; text-align: center; }
+#agent-count, #user-count { color: var(--primary); background: var(--primary-soft); border-radius: 6px; padding: 2px 6px; font-size: 11px; min-width: 20px; text-align: center; }
 .agents-header p { font-size: 12px; margin-top: 4px; color: var(--muted); }
 .add-agent { margin: 16px 4px 13px; background: var(--primary-soft); color: var(--primary); border-color: var(--accent-border); }
-.roster { overflow-y: auto; padding: 0 4px 4px; scrollbar-width: thin; scrollbar-color: var(--accent-border) transparent; }
+.roster { flex: 1; min-height: 0; overflow-y: auto; padding: 0 4px 4px; scrollbar-width: thin; scrollbar-color: var(--accent-border) transparent; }
+.connected-users { display: flex; flex-direction: column; flex: 0 1 auto; min-height: 76px; max-height: 35%; margin: 16px 4px 0; padding-top: 14px; border-top: 1px solid var(--border); }
+.connected-users h3 { display: flex; align-items: center; gap: 7px; flex-shrink: 0; font-size: 12px; font-weight: 700; margin-bottom: 9px; }
+.user-list { list-style: none; min-height: 0; overflow-y: auto; scrollbar-width: thin; padding: 0; margin: 0; }
+.user-card { display: flex; align-items: center; gap: 9px; padding: 8px 0; }
+.user-card > .icon { width: 18px; height: 18px; flex-shrink: 0; color: var(--muted); }
+.user-details { flex: 1; min-width: 0; }
+.user-details strong { display: block; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
+.user-details small { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
+.user-online { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.users-empty { font-size: 12px; color: var(--muted); padding: 6px 0; }
 .roster-group { margin-top: 14px; }
-.roster-group h3 { color: var(--muted); font-size: 11px; font-weight: 700; margin: 0 0 7px 1px; }
-.agent-card { border: 1px solid var(--border); display: flex; text-align: left; align-items: center; width: 100%; gap: 9px; padding: 9px 8px; margin-bottom: 7px; border-radius: 10px; background: var(--paper); color: var(--ink); }
+.roster-group h3 { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; font-weight: 700; margin: 0 0 7px 1px; }
+.provider-icon { display: block; width: 20px; height: 20px; flex: 0 0 auto; }
+.roster-group h3 .provider-icon { width: 15px; height: 15px; }
+:root:is([data-theme="dark"], [data-theme="graphite"], [data-theme="ocean"], [data-theme="plum"]) .provider-icon { filter: invert(1); }
+.provider-avatar { background: var(--surface); border: 1px solid var(--border); }
+.agent-card { border: 1px solid var(--border); display: grid; grid-template-columns: 36px minmax(0, 1fr) 14px; text-align: left; align-items: center; width: 100%; gap: 9px; padding: 9px 8px; margin-bottom: 7px; border-radius: 10px; background: var(--paper); color: var(--ink); }
 .agent-card:hover { border-color: var(--primary); background: var(--surface); }
 .agent-card .agent-details { min-width: 0; flex: 1; }
 .agent-card strong { display: block; font-size: 13px; font-weight: 710; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -297,15 +311,16 @@ kbd { font: inherit; background: var(--surface); border: 1px solid var(--border)
 .agent-status.waiting { color: var(--green); }
 .agent-status.pending i { background: var(--clay); }
 .agent-card > .icon { width: 14px; height: 14px; color: var(--muted); }
+.agent-model-info { grid-column: 1 / -1; display: grid; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.agent-field { display: flex; align-items: baseline; justify-content: space-between; gap: 9px; font-size: 11px; line-height: 1.4; }
+.agent-field-label { flex: 0 1 auto; color: var(--muted); }
+.agent-field-value { min-width: 0; flex: 0 1 auto; text-align: right; overflow-wrap: anywhere; font-weight: 600; }
 
 dialog { width: min(510px, calc(100% - 26px)); max-height: 90dvh; padding: 0; color: var(--ink); background: var(--paper); border: 1px solid var(--border); border-radius: 17px; box-shadow: 0 20px 64px #00000042; }
 dialog::backdrop { background: #00000066; }
 .dialog-body { display: grid; gap: 16px; padding: 22px; }
 .dialog-body header, .setup-label { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .setup-actions { display: flex; flex: 0 0 auto; gap: 6px; }
-.automation-setting { padding-block: 10px; border-block: 1px solid var(--border); }
-.dialog-body .automation-toggle { display: flex; align-items: center; gap: 7px; }
-.automation-toggle input { width: auto; margin: 0; accent-color: var(--primary); }
 #setup-instruction { overflow-wrap: anywhere; }
 .dialog-body header h2 { font-size: 21px; font-weight: 750; letter-spacing: -.035em; }
 .dialog-body p { color: var(--muted); font-size: 13px; line-height: 1.55; margin-top: 5px; }

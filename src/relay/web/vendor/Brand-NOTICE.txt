@@ -1,0 +1,17 @@
+OpenAI and Anthropic icons
+
+The SVG assets are from Simple Icons 13.21.0, distributed under CC0 1.0 Universal.
+The full CC0 text is included in SimpleIcons-LICENSE.txt.
+
+Sources:
+https://github.com/simple-icons/simple-icons/blob/13.21.0/icons/openai.svg
+https://github.com/simple-icons/simple-icons/blob/13.21.0/icons/anthropic.svg
+
+OpenAI and its logo are trademarks of OpenAI. Anthropic and its logo are
+trademarks of Anthropic, PBC. CC0 does not grant trademark rights.
+These icons identify the connected client providers. AgentChatSystem is an
+independent project and is not endorsed by OpenAI or Anthropic.
+
+Brand information:
+https://openai.com/brand/
+https://www.anthropic.com/legal

@@ -16,7 +16,7 @@ from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from relay import automation, storage
+from relay import storage
 from relay.server import Handler, LocalHTTPServer
 
 
@@ -148,13 +148,3 @@ class PlatformSmoke(unittest.TestCase):
                     channel.open_folder(folder, 'shared')
                     opener = 'open' if sys.platform == 'darwin' else 'xdg-open'
                     self.assertEqual(open_folder.call_args.args[0], [opener, str(folder / 'shared')])
-
-    @unittest.skipIf(os.name == 'nt', 'Windows keeps its existing native executable checks')
-    def test_find_posix_cli_on_path(self):
-        with TemporaryDirectory() as directory:
-            for role in ('codex', 'claude'):
-                cli = Path(directory) / role
-                cli.write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
-                cli.chmod(0o755)
-                with patch.dict(os.environ, {'PATH': directory}):
-                    self.assertEqual(automation.executable(role), str(cli.absolute()))

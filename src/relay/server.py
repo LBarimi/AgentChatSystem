@@ -14,7 +14,6 @@ from time import monotonic, time_ns
 from urllib.parse import parse_qs, quote, urlsplit
 from uuid import UUID, uuid4
 
-from relay.automation import Automation
 from relay.board import Board, prepare_post
 from relay.chat_files import ChatFiles, prepare_chat_files
 from relay.errors import ApiError
@@ -22,6 +21,8 @@ from relay.storage import ChannelStorage, StorageError, TEXT_BYTES
 from relay.uploads import MAX_FILES, MAX_FILE_BYTES, MAX_UPLOAD_REQUEST, UploadError, UploadStore, upload_policy, validate_file
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, LEGACY_MAX_WAIT_SECONDS, MCP_VERSION, LEGACY_PNG_PROMPT
 from relay.settings import APP_NAME, LANGUAGES, LISTEN_HOST, LOOPBACK, Settings
+from relay.session_details import ParticipantDetails
+from relay.presence import ConnectedUsers
 
 ROLES = ("codex", "claude")
 DEFAULT_CHANNEL = "general"
@@ -100,10 +101,6 @@ class Room:
             participant_columns = {row['name'] for row in self.db.execute('PRAGMA table_info(participants)')}
             if 'removed_at' not in participant_columns:
                 self.db.execute('ALTER TABLE participants ADD COLUMN removed_at TEXT')
-            delivery_columns = {row['name'] for row in self.db.execute('PRAGMA table_info(deliveries)')}
-            for column in ('received_at', 'received_by'):
-                if column not in delivery_columns:
-                    self.db.execute(f'ALTER TABLE deliveries ADD COLUMN {column} TEXT')
             channel_columns = {row['name'] for row in self.db.execute('PRAGMA table_info(channels)')}
             if 'folder' not in channel_columns:
                 self.db.execute('ALTER TABLE channels ADD COLUMN folder TEXT')
@@ -120,11 +117,12 @@ class Room:
         self.board_revision = time_ns()
         self.folder_lock = Lock()
         self.revision = 0
+        self.users = ConnectedUsers(self.changed, self._notify)
         self.waiters = {}
         self.legacy_notices = set()
         self.streams = 0
         self.dirty_logs = set()
-        self.automation = Automation(self, db_path.parent)
+        self.participant_details = ParticipantDetails(self)
         for channel in self.channels():
             try:
                 self.storage.folder(Path(channel['folder']), 'shared')
@@ -397,7 +395,6 @@ class Room:
                         UPDATE participants SET removed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?
                     """, (agent_id,))
                     self.board.drop_pending(agent_id)
-                    self.db.execute('UPDATE agent_automation SET enabled=0 WHERE agent_id=?', (agent_id,))
                 self._notify_board()
             return {'id': agent_id, 'removed': True}
 
@@ -409,7 +406,6 @@ class Room:
                 raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
             return {
                 **dict(participant), **connection_setup(port, agent_id, participant['role'], language=language),
-                'automation': self.automation.describe(agent_id),
             }
 
     def participants(self, channel_id=None):
@@ -424,7 +420,7 @@ class Room:
                         not channel_id or self.waiters[p['id']] in (None, channel_id)
                     ),
                     'pending': pending.get(p['id'], 0),
-                    'automation': self.automation.describe(p['id']),
+                    **({'model_settings': self.participant_details.values.get(p['id'], {})} if p['role'] == 'codex' else {}),
                 }
                 for p in participants
             ]
@@ -450,6 +446,7 @@ class Room:
                 "channel": channel,
                 "channels": self.channels(),
                 "participants": self.participants(channel_id),
+                "users": self.users.snapshot(),
                 "archived_participants": self._archived_participants(rows),
                 "total_messages": self.db.execute('SELECT COUNT(*) FROM messages WHERE channel_id=?', (channel_id,)).fetchone()[0],
                 "messages": self.chat_files.attach_metadata(reversed(rows)),
@@ -572,8 +569,8 @@ class Room:
             attachments.append(validate_file(path.name, data))
         return '\n'.join(lines).strip(), attachments
 
-    def wait_result(self, agent, seconds, channel_id=None, runner=None, client_version=None):
-        result = self.wait_message(agent, seconds, channel_id, runner)
+    def wait_result(self, agent, seconds, channel_id=None, client_version=None):
+        result = self.wait_message(agent, seconds, channel_id)
         # Teach already-connected clients the body-only upload without changing their cached tool schema.
         with self.changed:
             if client_version != MCP_VERSION and agent not in self.legacy_notices and result['state'] != 'removed':
@@ -585,27 +582,7 @@ class Room:
                 }
         return result
 
-    def pending_event(self, agent):
-        revoked = self.board.revoked(agent)
-        if revoked:
-            return {'kind': 'board_deleted', 'id': revoked['post_id']}
-        notice = self.board.unread(agent)
-        if notice:
-            return {'kind': 'board_post', 'id': notice['id']}
-        row = self.db.execute(f'SELECT m.id {PENDING_MESSAGES} AND d.agent_id=? ORDER BY m.id LIMIT 1', (agent,)).fetchone()
-        return {'kind': 'message', 'id': row['id']} if row else None
-
-    def configure_automation(self, payload):
-        with self.changed:
-            agent = self._participant(payload.get('id'))
-            if agent is None:
-                raise RequestError('에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
-        try:
-            return self.automation.configure(dict(agent), payload)
-        except (ValueError, sqlite3.Error) as error:
-            raise RequestError(str(error), 409) from None
-
-    def wait_message(self, agent, seconds, channel_id=None, runner=None):
+    def wait_message(self, agent, seconds, channel_id=None):
         if type(seconds) is not int or not 0 <= seconds <= LEGACY_MAX_WAIT_SECONDS:
             raise RequestError(f"에이전트와 대기 시간(0~{LEGACY_MAX_WAIT_SECONDS}초)을 확인하세요.")
         # Old clients can still submit 60, but idle waiting is now capped at 40 seconds.
@@ -628,8 +605,6 @@ class Room:
                 while True:
                     if self._participant(agent) is None:
                         return {'state': 'removed'}
-                    if not runner and self.automation.describe(agent)['enabled']:
-                        return {'state': 'managed', 'message': '자동 재개 실행기가 이 받은편지함을 처리합니다. 수동 수신을 끝내세요.'}
                     if channel_id:
                         self._channel(channel_id)
                     revoked = self.board.revoked(agent)
@@ -642,11 +617,6 @@ class Room:
                         f'SELECT {MESSAGE_FIELDS} {PENDING_MESSAGES} AND d.agent_id=? {scope} ORDER BY m.id LIMIT 1', params
                     ).fetchone()
                     if message:
-                        with self.db:
-                            self.db.execute("""
-                                UPDATE deliveries SET received_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),received_by=?
-                                WHERE message_id=? AND agent_id=?
-                            """, (runner, message['id'], agent))
                         return {
                             "state": "message", "message": self.chat_files.attach_metadata((message,))[0],
                             "channel": self._channel(message['channel_id']),
@@ -671,6 +641,8 @@ class Handler(BaseHTTPRequestHandler):
         "/board.js": ("board.js", "text/javascript; charset=utf-8"),
         "/style.css": ("style.css", "text/css; charset=utf-8"),
         "/vendor/icons.svg": ("vendor/icons.svg", "image/svg+xml"),
+        "/vendor/openai.svg": ("vendor/openai.svg", "image/svg+xml"),
+        "/vendor/anthropic.svg": ("vendor/anthropic.svg", "image/svg+xml"),
         "/vendor/PretendardVariable.woff2": ("vendor/PretendardVariable.woff2", "font/woff2"),
         **{f'/locales/{language}.json': (f'locales/{language}.json', 'application/json; charset=utf-8')
            for language in LANGUAGES},
@@ -762,6 +734,7 @@ class Handler(BaseHTTPRequestHandler):
                 raise RequestError("브라우저 연결이 너무 많습니다.", 429)
             self.room.streams += 1
         try:
+            self.room.users.connect(self.client_address[0])
             self.close_connection = True
             self.connection.settimeout(8)
             self.send_response(200)
@@ -783,6 +756,7 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             with self.room.changed:
                 self.room.streams -= 1
+                self.room.users.disconnect(self.client_address[0])
 
     def _saved_language(self):
         try:
@@ -848,7 +822,7 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     raise RequestError("대기 시간은 초 단위 정수로 입력하세요.") from None
                 self._json(self.room.wait_result(params.get("agent", [""])[0], seconds, channel_id,
-                                                self.headers.get('X-Relay-Runner'), self.headers.get('X-Local-Relay-Client')))
+                                                self.headers.get('X-Local-Relay-Client')))
             else:
                 raise RequestError("페이지를 찾을 수 없습니다.", 404, key='errorUnavailable')
         except ApiError as exc:
@@ -923,8 +897,6 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.room.rename(payload))
             elif self.path == '/api/participants/delete':
                 self._json(self.room.remove_participant(payload.get('id')))
-            elif self.path == '/api/participants/automation':
-                self._json(self.room.configure_automation(payload))
             elif self.path == '/api/channels':
                 self._json(self.room.create_channel(payload), 201)
             elif self.path == '/api/channels/rename':
@@ -961,7 +933,7 @@ def serve(port, db_path, *, settings=None):
     with LocalHTTPServer((LISTEN_HOST, port), Handler) as server:
         server.settings = settings if settings is not None else Settings()
         server.room = Room(db_path)
-        server.room.automation.start()
+        server.room.participant_details.start()
         print(f"{APP_NAME}: http://{LOOPBACK}:{server.server_port}/", flush=True)
         print(f"LAN: http://<this computer's LAN IPv4 address>:{server.server_port}/", flush=True)
         try:
@@ -969,4 +941,4 @@ def serve(port, db_path, *, settings=None):
         except KeyboardInterrupt:
             pass
         finally:
-            server.room.automation.stopped.set()
+            server.room.participant_details.stopped.set()

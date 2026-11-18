@@ -36,7 +36,6 @@ class Client:
             "Content-Type": "application/octet-stream" if raw is not None else "application/json", "X-Local-Relay": "1",
             **({"Content-Length": str(size)} if raw is not None else {}),
             "X-Local-Relay-Client": MCP_VERSION,
-            **({'X-Relay-Runner': os.environ['LOCAL_RELAY_RUN_ID']} if os.environ.get('LOCAL_RELAY_RUN_ID') else {}),
         })
         try:
             with self.opener.open(request, timeout=timeout) as response:

@@ -16,7 +16,6 @@ RUNTIME = f'bin/internal/{APP_NAME}.pyz'
 SOURCE_FILES = (
     'src/__main__.py',
     'src/relay/__init__.py',
-    'src/relay/automation.py',
     'src/relay/board.py',
     'src/relay/chat_files.py',
     'src/relay/cli.py',
@@ -25,7 +24,9 @@ SOURCE_FILES = (
     'src/relay/mcp.py',
     'src/relay/prompt_locales.json',
     'src/relay/prompts.py',
+    'src/relay/presence.py',
     'src/relay/server.py',
+    'src/relay/session_details.py',
     'src/relay/settings.py',
     'src/relay/storage.py',
     'src/relay/uploads.py',
@@ -48,6 +49,10 @@ SOURCE_FILES = (
     'src/relay/web/vendor/Pretendard-LICENSE.txt',
     'src/relay/web/vendor/PretendardVariable.woff2',
     'src/relay/web/vendor/icons.svg',
+    'src/relay/web/vendor/openai.svg',
+    'src/relay/web/vendor/anthropic.svg',
+    'src/relay/web/vendor/SimpleIcons-LICENSE.txt',
+    'src/relay/web/vendor/Brand-NOTICE.txt',
 )
 OTHER_FILES = (
     '.gitattributes',

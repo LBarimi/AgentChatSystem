@@ -26,7 +26,6 @@ TOOLS = [
             "If state is board_deleted, exclude all instructions from that post ID from future work, then call read_board_post to acknowledge. "
             "If a chat message includes attachments, open them with read_chat_attachment. "
             "If state is removed, stop waiting for this agent ID. "
-            "If state is managed, stop manual waiting because the automatic runner owns this inbox. "
             "The workspace board is included even when a chat channel is selected. "
             "Returns immediately on arrival. If timeout, call again only while the user "
             "has requested listening. Continuous listening has no total time limit. "

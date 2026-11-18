@@ -65,6 +65,43 @@ class NetworkAccess(unittest.TestCase):
         self.assertEqual(health['service'], 'AgentChatSystem')
         self.assertEqual(self.server.server_address[0], '0.0.0.0')
 
+    def test_legacy_resume_settings_do_not_block_manual_mcp_delivery(self):
+        root = Path(self.temporary.name)
+        with self.server.room.db as db:
+            db.execute('CREATE TABLE agent_automation (agent_id TEXT, session_id TEXT, cwd TEXT, transcript TEXT, enabled INTEGER)')
+            db.execute('INSERT INTO agent_automation VALUES (?,?,?,?,1)', ('codex', 'old-session', str(root), 'old.jsonl'))
+            for column in ('received_at', 'received_by'):
+                db.execute(f'ALTER TABLE deliveries ADD COLUMN {column} TEXT')
+        self.server.room.db.close()
+        self.server.room = Room(root / 'room.sqlite3')
+        client = Client(self.port)
+        status, _ = self.call('/api/participants/automation', host=f'127.0.0.1:{self.port}',
+                              payload={'id': 'codex', 'enabled': True})
+        self.assertEqual(status, 404)
+        self.assertTrue(all('automation' not in item for item in client.call('/api/participants')['participants']))
+        for language in ('en', 'ko', 'ja', 'zh-CN', 'zh-TW', 'ru', 'de'):
+            setup = client.call('/api/setup?agent=codex&lang=' + language)
+            self.assertNotIn('automation', setup)
+            self.assertNotIn('managed', setup['prompt'])
+            self.assertIn('receive(seconds=40)', setup['prompt'])
+        message = client.call('/api/messages', {'sender': 'user', 'recipient': 'codex', 'body': 'Manual task'})['message']
+        event = client.call('/api/wait?agent=codex&seconds=0')
+        self.assertEqual(event['state'], 'message')
+        self.assertEqual(event['message']['id'], message['id'])
+        client.call('/api/messages', {'sender': 'codex', 'reply_to': message['id'], 'body': 'Completed manually'})
+        self.assertEqual(client.call('/api/wait?agent=codex&seconds=0')['state'], 'timeout')
+        post = self.server.room.publish_board_post({'request_id': str(uuid4()), 'title': 'Instructions', 'body': 'Read manually'})
+        event = client.call('/api/wait?agent=codex&seconds=0')
+        self.assertEqual(event['state'], 'board_post')
+        self.assertEqual(event['post']['id'], post['id'])
+        self.server.room.read_board_post(post['id'], 'codex')
+        self.server.room.delete_board_post(post['id'])
+        self.assertEqual(client.call('/api/wait?agent=codex&seconds=0')['state'], 'board_deleted')
+        self.server.room.read_board_post(post['id'], 'codex')
+        self.assertEqual(client.call('/api/wait?agent=codex&seconds=0')['state'], 'timeout')
+        self.server.room.remove_participant('codex')
+        self.assertEqual(client.call('/api/wait?agent=codex&seconds=0')['state'], 'removed')
+
     def test_numeric_lan_hosts_can_read_and_write_with_matching_origin(self):
         for address in ('127.0.0.1', 'localhost', '192.168.1.20', '172.31.250.20', '10.20.30.40'):
             with self.subTest(address=address):

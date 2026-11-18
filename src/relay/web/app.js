@@ -72,6 +72,36 @@ function avatar(role) {
   return avatar;
 }
 
+function providerIcon(role) {
+  const image = element("img", "provider-icon");
+  image.src = "/vendor/" + (role === "codex" ? "openai" : "anthropic") + ".svg";
+  image.alt = "";
+  image.width = 20;
+  image.height = 20;
+  image.setAttribute("aria-hidden", "true");
+  return image;
+}
+
+function modelSettings(agent) {
+  const settings = agent.model_settings || {};
+  const effortKeys = {
+    none: "reasoningNone", minimal: "reasoningMinimal", low: "reasoningLow", medium: "reasoningMedium",
+    high: "reasoningHigh", xhigh: "reasoningXhigh", max: "reasoningMax", ultra: "reasoningUltra",
+  };
+  const effort = settings.reasoning_effort;
+  const fields = element("span", "agent-model-info");
+  fields.title = t("modelSettingsHint");
+  for (const [label, value] of [
+    [t("model"), settings.model || t("modelUnknown")],
+    [t("reasoningEffort"), effort ? (effortKeys[effort] ? t(effortKeys[effort]) : effort) : t("modelUnknown")],
+  ]) {
+    const field = element("span", "agent-field");
+    field.append(element("span", "agent-field-label", label), element("span", "agent-field-value", value));
+    fields.append(field);
+  }
+  return fields;
+}
+
 function showMessage(id, message) {
   const target = el(id);
   target.textContent = message || "";
@@ -163,19 +193,15 @@ function showParticipants() {
   for (const role of ["codex", "claude"]) {
     const agents = current.participants.filter((agent) => agent.role === role);
     const section = element("section", "roster-group");
-    section.append(element("h3", "", roleName[role] + " · " + agents.length));
+    const heading = element("h3");
+    heading.append(providerIcon(role), element("span", "", roleName[role] + " · " + agents.length));
+    section.append(heading);
     for (const agent of agents) {
       const status = element("span", "agent-status");
       const online = agent.waiting;
       status.classList.toggle("waiting", online);
       status.classList.toggle("pending", !online && agent.pending > 0);
-      const automation = agent.automation || {};
-      const autoLabels = { running: t("autoRunning"), busy: t("autoBusy"), retrying: t("autoRetrying"), blocked: t("autoBlocked") };
-      const label = automation.enabled
-        ? autoLabels[automation.state] || t("autoListening")
-        : online ? t("listening") : t("idle");
-      if (automation.enabled && automation.state !== "blocked") status.classList.add("waiting");
-      if (automation.error) status.title = apiErrorMessage(automation);
+      const label = online ? t("listening") : t("idle");
       status.append(element("i"), label + (agent.pending ? " · " + t("agentPending", { count: agent.pending }) : ""));
       const details = element("span", "agent-details");
       details.append(element("strong", "", agent.name), status);
@@ -183,7 +209,10 @@ function showParticipants() {
       button.type = "button";
       button.dataset.agent = agent.id;
       button.setAttribute("aria-label", t("agentSetup", { name: agent.name }));
-      button.append(avatar(role), details, icon("chevron-right"));
+      const brandAvatar = element("span", "avatar provider-avatar");
+      brandAvatar.append(providerIcon(role));
+      button.append(brandAvatar, details, icon("chevron-right"));
+      if (role === "codex") button.append(modelSettings(agent));
       section.append(button);
     }
     groups.push(section);
@@ -191,6 +220,26 @@ function showParticipants() {
   roster.replaceChildren(...groups);
   roster.scrollTop = previousScroll;
   if (focusId) roster.querySelector('[data-agent="' + CSS.escape(focusId) + '"]')?.focus({ preventScroll: true });
+}
+
+function showUsers() {
+  const users = live ? current?.users || [] : [];
+  el("user-count").textContent = users.length;
+  const list = el("user-list");
+  const previousScroll = list.scrollTop;
+  list.replaceChildren(...users.map((user) => {
+    const item = element("li", "user-card");
+    const details = element("span", "user-details");
+    details.append(element("strong", "", user.name));
+    if (user.name !== user.ip) details.append(element("small", "", user.ip));
+    const online = element("span", "user-online");
+    online.title = t("connected");
+    item.append(icon("users"), details, online);
+    return item;
+  }));
+  list.scrollTop = previousScroll;
+  el("users-empty").hidden = users.length > 0;
+  el("users-empty").textContent = t(live ? "noConnectedUsers" : "reconnecting");
 }
 
 function option(value, name) {
@@ -261,6 +310,7 @@ function applyRoom(snapshot, repaint = false) {
   const lastParticipants = participantKey;
   participantKey = JSON.stringify(snapshot.participants.map(({ id, name, role }) => [id, name, role]));
   const dirtyRoster = !current || JSON.stringify(snapshot.participants) !== JSON.stringify(current.participants);
+  const dirtyUsers = !current || JSON.stringify(snapshot.users) !== JSON.stringify(current.users);
   current = snapshot;
   const channels = JSON.stringify([activeChannel, snapshot.channels]);
   if (repaint || channelKey !== channels) {
@@ -268,6 +318,7 @@ function applyRoom(snapshot, repaint = false) {
     channelKey = channels;
   }
   if (repaint || dirtyRoster) showParticipants();
+  if (repaint || dirtyUsers) showUsers();
   if (repaint || lastParticipants !== participantKey) showRecipients();
 
   const count = snapshot.total_messages;
@@ -291,6 +342,7 @@ function connection(up) {
   const status = el("connection");
   status.classList.toggle("live", up);
   status.querySelector("span").textContent = up ? t("connected") : t("reconnecting");
+  showUsers();
   refreshControls();
 }
 
@@ -718,11 +770,6 @@ async function openSetup(agentId) {
     : t("claudeConfigHint", { path: setup.config_path || "~/.claude.json" });
   el("setup-config").textContent = setup.config;
   el("setup-prompt").textContent = setup.prompt;
-  el("setup-automation").checked = Boolean(setup.automation?.enabled);
-  el("setup-automation-status").textContent = setup.automation?.enabled
-    ? t("resumeEnabled")
-    : t("resumeDisabled");
-  showMessage("setup-automation-error", "");
   el("setup-feedback").textContent = "";
   if (!setupDialog.open) setupDialog.showModal();
 }
@@ -796,26 +843,6 @@ el("setup-delete").addEventListener("click", () => {
   el("agent-delete-name").textContent = name + " (" + setupAgent + ")";
   showMessage("agent-delete-error", "");
   agentDeleteDialog.showModal();
-});
-el("setup-automation").addEventListener("change", async () => {
-  const toggle = el("setup-automation");
-  const id = setupAgent;
-  const enabled = toggle.checked;
-  toggle.disabled = true;
-  showMessage("setup-automation-error", "");
-  try {
-    await request("/api/participants/automation", { id, enabled });
-    if (setupAgent === id) {
-      el("setup-automation-status").textContent = enabled ? t("resumeEnabled") : t("resumeOff");
-    }
-  } catch (error) {
-    if (setupAgent === id) {
-      toggle.checked = !enabled;
-      showMessage("setup-automation-error", error.message);
-    }
-  } finally {
-    toggle.disabled = false;
-  }
 });
 el("agent-delete-form").addEventListener("submit", async (event) => {
   event.preventDefault();
