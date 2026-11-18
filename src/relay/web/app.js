@@ -552,8 +552,11 @@ for (const button of document.querySelectorAll("[data-folder]")) {
 
 async function openSetup(agentId) {
   const requestId = ++setupRequest;
-  const setup = await request("/api/setup?agent=" + encodeURIComponent(agentId));
+  const language = document.documentElement.lang;
+  const query = new URLSearchParams({ agent: agentId, lang: language });
+  const setup = await request("/api/setup?" + query);
   if (requestId !== setupRequest) return;
+  if (language !== document.documentElement.lang) return openSetup(agentId);
   setupAgent = setup.id;
   el("agent-name").value = setup.name;
   showMessage("rename-error", "");

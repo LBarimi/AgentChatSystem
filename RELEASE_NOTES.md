@@ -1,44 +1,43 @@
 # AgentChatSystem 1.0.0
 
-같은 Windows PC의 Codex·Claude 대화가 MCP로 작업 메시지와 파일을 주고받는 로컬 AI 협업 메신저입니다.
+**English** · [한국어](release-notes/ko.md) · [日本語](release-notes/ja.md) · [简体中文](release-notes/zh-CN.md) · [繁體中文](release-notes/zh-TW.md) · [Русский](release-notes/ru.md) · [Deutsch](release-notes/de.md)
 
-## 주요 변경사항
+AgentChatSystem is a local collaboration workspace for Codex and Claude sessions on the same Windows PC. Agents exchange tasks and files through MCP.
 
-- `bin/start.cmd`에서 실행하며, 보조 스크립트와 실행 파일은 `bin/internal/`에 있습니다.
-- 기본 포트는 9081이며 `bin/settings.ini`에서 바꿀 수 있습니다. 서버는 `127.0.0.1`에서만 수신합니다.
-- 라이트·다크·그래파이트 색상을 조정하고 오션·샌드·플럼 테마를 추가했습니다. 시스템 테마는 Windows의 밝기 설정을 따릅니다.
-- 한국어·일본어·영어·중국어 간체·중국어 번체·러시아어·독일어를 지원합니다. 처음에는 브라우저의 선호 언어를 사용하고, 선택한 언어는 `bin/settings.ini`에 저장합니다.
+## What's new in 1.0.0
 
-## 포함 기능
+- Start the app with `bin/start.cmd`. The runtime and helper scripts are in `bin/internal/`.
+- The server listens only on `127.0.0.1`. The default port is `9081` and can be changed in `bin/settings.ini`.
+- Light, Dark, and Graphite have updated palettes. Ocean, Sand, and Plum are new. System follows the Windows light or dark mode.
+- The interface and both connection prompts support English, Korean, Japanese, Simplified Chinese, Traditional Chinese, Russian, and German. On the first visit, the app chooses a supported language from the browser's preferences and saves the selection in `bin/settings.ini`.
 
-- 여러 Codex·Claude 참가자 등록, 닉네임 변경, 삭제
-- 채널 생성, 개별 수신자·모두에게 메시지 전송
-- 채널별 shared/logs 저장 위치 지정
-- 사용자 게시판, 이미지 첨부, AI 열람 상태, 지침 삭제 알림
-- MD·PNG 채팅 첨부, AI의 PNG 답변, 미리보기·다운로드
-- 구형 MCP 도구 목록에서도 사용하는 PNG 첨부 호환 방식
-- 기본 40초 수신 대기와 메시지 도착 시 즉시 반환
-- Enter 전송, Shift+Enter 줄바꿈, 한글 조합 처리
-- 채팅 비우기와 대기 메시지 정리
-- Codex·Claude 연결 설정과 복사용 설치·대기 프롬프트
+## Included features
 
-## 실행
+- Register, rename, and remove multiple Codex and Claude participants.
+- Create channels and send messages to one agent or everyone. Set a location for each channel's shared files and logs.
+- Post instructions and images to the board, check which agents have read a post, and notify agents when its instructions are deleted.
+- Attach Markdown and PNG files to chat messages. Agents can send PNGs that users can preview or download. Older MCP connections can attach PNGs using a directive in the reply body.
+- Wait up to 40 seconds per receive call, returning as soon as a message arrives.
+- Send with Enter and start a new line with Shift+Enter. The input handles Korean IME composition.
+- Clear a channel's chat and pending deliveries. Copy each agent's MCP configuration, setup prompt, and listening prompt from its participant card.
 
-Windows에서 Python 3.10 이상을 설치하고 `python` 명령이 동작하는지 확인한 뒤 `bin/start.cmd`를 실행합니다. 기본 주소는 `http://127.0.0.1:9081/`입니다. 포트를 바꾸려면 `bin/settings.ini`를 편집하고 서버를 재시작하세요. 상세 연결 방법은 README를 참고하세요.
+## Run on Windows
 
-Relay 서버와 MCP 중계기 자체는 Python 표준 라이브러리만 사용하며 API 키를 요구하지 않습니다. AI 앱·계정·모델 사용 권한과 이미지 생성 도구는 각 세션에서 별도로 준비합니다.
+Install Python 3.10 or later, check that `python` is available on your PATH, and run [`bin/start.cmd`](bin/start.cmd). The default address is [http://127.0.0.1:9081/](http://127.0.0.1:9081/). To use a different port, edit [`bin/settings.ini`](bin/settings.ini) and restart the server. See the [README](README.md) for connection instructions.
 
-기존 MCP 설정이 `bin/local_chat.pyz`를 가리키는 경우, 참가자 카드에서 새 설정을 복사해 적용한 뒤 다시 연결하세요.
+The server and MCP bridge use Python's standard library and run without an API key. AI clients, accounts, model access, and image generation tools are provided by each session.
 
-## 현재 범위
+If an existing MCP configuration points to `bin/local_chat.pyz`, copy the current configuration from the participant card and reconnect.
 
-- 기본 사용 방식은 AI 대화가 MCP `receive`를 계속 호출하는 방식입니다. 모델 턴이 끝나면 사용자가 수신을 재개해야 할 수 있습니다.
-- 참가자의 **새 메시지 자동 재개**는 실험 기능이며 기본으로 꺼져 있습니다. 공식 CLI 설치·인증이 필요하고, 데스크톱 앱이 점유한 대화는 동시 접근 제한으로 재개되지 않을 수 있습니다. 전용 CLI 대화에서 검증한 뒤 사용하세요.
-- AI의 대기 반복 호출과 실제 작업에는 사용하는 서비스의 사용량이 발생할 수 있습니다.
-- Windows 이외의 실행 환경은 검증하지 않았습니다.
+## Current scope
 
-## 배포 구성
+- Agents usually keep calling MCP `receive`. If a model turn ends, send the listening prompt again to resume receiving.
+- **Resume on new messages** is experimental and off by default. It requires the official CLI and a signed-in account. Try it in a dedicated CLI session, since a desktop app can hold a session open.
+- Repeated receive calls and task execution may count toward the connected AI service's usage.
+- This release was tested on Windows.
 
-`AgentChatSystem-v1.0.0-windows.zip`에는 소스, Windows 실행·빌드 스크립트, `bin/internal/AgentChatSystem.pyz`, 기본 `bin/settings.ini`, 사용 안내, 프로젝트의 [MIT 라이선스](LICENSE), UI 자산 라이선스 문서와 파일 해시가 들어 있습니다.
+## What's in the ZIP
 
-대화·게시판 DB, 업로드 파일, 공유 폴더, 로그, 개인 MCP 설정, Git 이력, 임시 파일과 다른 프로젝트 자료는 포함하지 않습니다. 처음 실행하면 실행한 폴더에 새로운 `var/`가 생성됩니다.
+`AgentChatSystem-v1.0.0-windows.zip` contains the source, Windows scripts, `bin/internal/AgentChatSystem.pyz`, default settings, the README, release notes in seven languages, the [project MIT license](LICENSE), third-party UI license notices, and file checksums.
+
+The packager excludes local chat and board databases, uploads, shared folders, logs, personal MCP settings, Git history, temporary files, and unrelated project files. The app creates a local `var/` directory on first launch.

@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 from relay.errors import ApiError
 from relay.guidance import WORK_TOOLS_PROMPT, LEGACY_PNG_PROMPT
+from relay.prompts import listening_marker
 from relay.settings import APP_NAME
 
 
@@ -26,6 +27,7 @@ def session_status(path, role, identity=None):
     matched = False
     cwd = None
     prefixes = tuple(f'이 대화는 {name}의 {identity} 세션이야.' for name in (APP_NAME, 'Local Relay'))
+    marker = listening_marker(identity)
     for line in read_tail(path):
         try:
             item = json.loads(line)
@@ -56,8 +58,9 @@ def session_status(path, role, identity=None):
         content = message.get('content', '')
         if isinstance(content, list):
             content = '\n'.join(str(block.get('text', '')) for block in content if isinstance(block, dict))
-        if user and isinstance(content, str) and content.lstrip().startswith(prefixes):
-            matched = True
+        if not matched and identity is not None and user and isinstance(content, str):
+            content = content.lstrip()
+            matched = content.startswith(prefixes) or content.partition('\n')[0].rstrip() == marker
     return {'busy': busy, 'matched': matched, 'cwd': cwd}
 
 

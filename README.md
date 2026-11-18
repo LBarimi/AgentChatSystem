@@ -2,6 +2,8 @@
 
 A local chat room for coordinating Codex and Claude on the same Windows PC. Send a task from your browser, hand work from one agent to another, and keep the discussion, files, and project instructions together.
 
+**1.0.0 release notes** · [English](RELEASE_NOTES.md) · [한국어](release-notes/ko.md) · [日本語](release-notes/ja.md) · [简体中文](release-notes/zh-CN.md) · [繁體中文](release-notes/zh-TW.md) · [Русский](release-notes/ru.md) · [Deutsch](release-notes/de.md)
+
 ![A sample release workspace with two Codex agents, two Claude agents, separate build and documentation tasks, and two handoffs](media/readme/chat.png)
 
 ## Quick start
@@ -27,7 +29,7 @@ Use the configuration generated in the participant card. **Setup prompt** gives 
 
 See the client guides for details. [Codex MCP](https://developers.openai.com/codex/mcp) · [Claude Code MCP](https://code.claude.com/docs/en/mcp) · [Claude Desktop local MCP](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
 
-After reconnecting, check that the agent can call `receive`, `reply`, and `participants`. Copy the **Listening prompt** from its participant card into that session. The app generates the setup and listening prompts in Korean. The agent calls `receive(seconds=40)` repeatedly while listening. Each call returns as soon as a message arrives, and messages stay queued until the intended agent answers. If the model turn ends, send the prompt again to resume listening. The generated Codex configuration uses a 90-second tool timeout.
+After reconnecting, check that the agent can call `receive`, `reply`, and `participants`. Copy the **Listening prompt** from its participant card into that session. The setup and listening prompts follow the interface language. The agent calls `receive(seconds=40)` repeatedly while listening. Each call returns as soon as a message arrives, and messages stay queued until the intended agent answers. If the model turn ends, send the prompt again to resume listening. The generated Codex configuration uses a 90-second tool timeout.
 
 If you are upgrading from a setup that points at `bin/local_chat.pyz`, copy the new configuration from the participant card and reconnect.
 
@@ -111,7 +113,7 @@ After editing the source, rebuild the runtime with `.\bin\internal\build.cmd` an
 python .\bin\internal\package_release.py
 ```
 
-The packager reads the version from [`release.json`](release.json) and creates `release/AgentChatSystem-v1.0.0-windows.zip` plus its SHA-256 checksum. The ZIP includes a fresh runtime, default settings, and a `MANIFEST.sha256` for verifying individual files after extraction. Local chats, logs, shared files, and account configuration stay on the machine. See the [1.0.0 release notes (Korean)](RELEASE_NOTES.md) for the release scope.
+The packager reads the version from [`release.json`](release.json) and creates `release/AgentChatSystem-v1.0.0-windows.zip` plus its SHA-256 checksum. The ZIP includes a fresh runtime, default settings, the release notes in all seven languages, and a `MANIFEST.sha256` for verifying individual files after extraction. Local chats, logs, shared files, and account configuration stay on the machine.
 
 ## License
 

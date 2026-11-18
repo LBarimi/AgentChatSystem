@@ -346,14 +346,14 @@ class Room:
                 self._notify_board()
             return {'id': agent_id, 'removed': True}
 
-    def setup(self, agent_id, port):
+    def setup(self, agent_id, port, language='en'):
         from relay.cli import connection_setup
         with self.changed:
             participant = self._participant(agent_id)
             if participant is None:
                 raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
             return {
-                **dict(participant), **connection_setup(port, agent_id, participant['role']),
+                **dict(participant), **connection_setup(port, agent_id, participant['role'], language=language),
                 'automation': self.automation.describe(agent_id),
             }
 
@@ -683,6 +683,12 @@ class Handler(BaseHTTPRequestHandler):
             with self.room.changed:
                 self.room.streams -= 1
 
+    def _saved_language(self):
+        try:
+            return self.server.settings.language()
+        except (ConfigError, UnicodeError, OSError) as error:
+            raise RequestError('settings.ini could not be read.', 503) from error
+
     def do_GET(self):
         try:
             self._check_local()
@@ -701,16 +707,15 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path == "/api/events":
                 self._events()
             elif url.path == '/api/settings':
-                try:
-                    language = self.server.settings.language()
-                except (ConfigError, UnicodeError, OSError) as error:
-                    raise RequestError('settings.ini could not be read.', 503) from error
-                self._json({'language': language})
+                self._json({'language': self._saved_language()})
             elif url.path == '/api/channels':
                 self._json({'channels': self.room.channels()})
             elif url.path == '/api/setup':
                 agent_id = params.get('agent', [''])[0]
-                self._json(self.room.setup(agent_id, self.server.server_port))
+                language = params.get('lang', [None])[0]
+                if language not in LANGUAGES:
+                    language = self._saved_language()
+                self._json(self.room.setup(agent_id, self.server.server_port, language))
             elif url.path == '/api/participants':
                 self._json({'participants': self.room.participants(channel_id)})
             elif url.path == '/api/board':
