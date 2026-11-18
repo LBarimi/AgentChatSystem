@@ -30,6 +30,10 @@ class PlatformSmoke(unittest.TestCase):
     def test_source_launch_and_mcp_round_trip(self):
         packager = runpy.run_path(str(ROOT / 'bin/internal/package_release.py'))
         with TemporaryDirectory(prefix='agent-chat-smoke-') as temporary:
+            if os.name == 'nt':
+                # Model a normal checkout, not Python's owner-only temporary directory.
+                subprocess.run(['icacls', temporary, '/inheritance:e'], check=True,
+                               stdout=subprocess.DEVNULL, timeout=10)
             home = Path(temporary).resolve() / 'checkout with spaces'
             for path in (*packager['SOURCE_FILES'], *packager['OTHER_FILES'], 'release.json'):
                 destination = home / path
@@ -56,10 +60,19 @@ class PlatformSmoke(unittest.TestCase):
 
             windows = os.name == 'nt'
             start = ['cmd.exe', '/d', '/c', r'bin\start.cmd'] if windows else ['sh', 'bin/start.sh']
+            launch_env = os.environ.copy()
+            if windows:
+                # Get-Command can return multiple applications, including Store aliases.
+                extra_python = home / 'extra python installation'
+                extra_python.mkdir()
+                (extra_python / 'python.cmd').write_text('@echo off\nexit /b 99\n', encoding='ascii')
+                launch_env['PATH'] = os.pathsep.join((
+                    str(Path(sys.executable).parent), str(extra_python), launch_env.get('PATH', ''),
+                ))
             process = None
             try:
                 if windows:
-                    subprocess.run([*start, '-NoOpen'], cwd=home, check=True, timeout=25)
+                    subprocess.run([*start, '-NoOpen'], cwd=home, env=launch_env, check=True, timeout=25)
                 else:
                     process = subprocess.Popen(start, cwd=home, stdin=subprocess.DEVNULL)
                 opener = build_opener(ProxyHandler({}))
@@ -83,6 +96,14 @@ class PlatformSmoke(unittest.TestCase):
                         sleep(0.05)
 
                 self.assertTrue((home / packager['RUNTIME']).is_file())
+                if windows:
+                    protected_acl = subprocess.check_output([
+                        'powershell', '-NoProfile', '-Command',
+                        '[System.IO.File]::GetAccessControl($env:AGENTCHAT_TEST_RUNTIME).AreAccessRulesProtected',
+                    ], env=dict(launch_env, AGENTCHAT_TEST_RUNTIME=str(home / packager['RUNTIME'])),
+                        encoding='utf-8', timeout=10)
+                    self.assertEqual(protected_acl.strip(), 'False',
+                                     'The runtime must inherit access permissions from bin/internal.')
                 example = call('/api/setup?agent=claude&lang=en')
                 shell = 'powershell' if windows else 'sh'
                 self.assertIn(f'```{shell}\n', example['prompt'])

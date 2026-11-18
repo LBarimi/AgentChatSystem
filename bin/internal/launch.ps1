@@ -4,7 +4,21 @@ $chatRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $chatArchive = Join-Path $PSScriptRoot 'AgentChatSystem.pyz'
 $chatVar = Join-Path $chatRoot 'var'
 $chatPidFile = Join-Path $chatVar 'server.json'
+$chatLauncherLog = Join-Path $chatVar 'launcher-error.log'
 $chatProcess = $null
+
+trap {
+    $chatDetails = ($_ | Out-String).TrimEnd()
+    [Console]::Error.WriteLine($chatDetails)
+    try {
+        New-Item -ItemType Directory -Force -Path $chatVar | Out-Null
+        Add-Content -LiteralPath $chatLauncherLog -Encoding UTF8 -Value ('[{0:o}] {1}' -f [DateTimeOffset]::Now, $chatDetails)
+        [Console]::Error.WriteLine("Launcher error log: $chatLauncherLog")
+    } catch {
+        # Keep the original error visible if the log directory cannot be written.
+    }
+    exit 1
+}
 
 if (Test-Path -LiteralPath $chatPidFile) {
     $chatRecord = Get-Content -LiteralPath $chatPidFile -Raw | ConvertFrom-Json
@@ -23,14 +37,21 @@ if ($Stop) {
     exit
 }
 
+# Match normal PATH lookup even when multiple Python executables or aliases exist.
+$chatPythonCommand = Get-Command python -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if (!$chatPythonCommand) { throw 'Python 3.10 or later is required on PATH.' }
+$chatPython = & $chatPythonCommand.Source -c 'import sys; print(sys.executable)'
+if ($LASTEXITCODE -ne 0 -or !$chatPython -or !(Test-Path -LiteralPath $chatPython)) {
+    throw 'Python executable not found. Add Python 3.10 or later to PATH.'
+}
 if (!(Test-Path -LiteralPath $chatArchive)) {
     & (Join-Path $PSScriptRoot 'build.cmd')
     if ($LASTEXITCODE -ne 0) { throw 'Build failed. Add Python 3.10 or later to PATH.' }
 }
-$chatPython = (& python -c 'import sys; print(sys.executable)').Trim()
-if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $chatPython)) { throw 'Python executable not found.' }
 $chatConfig = & $chatPython -B -X utf8 $chatArchive settings
-if ($LASTEXITCODE -ne 0) { throw 'Check bin/settings.ini and try again.' }
+if ($LASTEXITCODE -ne 0) {
+    throw 'Could not load runtime settings. See the Python error above; check access to bin/internal/AgentChatSystem.pyz and bin/settings.ini.'
+}
 $chatConfig = $chatConfig | ConvertFrom-Json
 $chatUrl = 'http://{0}:{1}' -f $chatConfig.host, $chatConfig.port
 

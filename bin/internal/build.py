@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import sys
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile
 import zipapp
 
 
@@ -11,10 +11,15 @@ def main():
         raise SystemExit('AgentChatSystem requires Python 3.10 or later.')
     internal = Path(__file__).resolve().parent
     target = internal / 'AgentChatSystem.pyz'
-    with TemporaryDirectory(prefix='.build-', dir=internal) as directory:
-        candidate = Path(directory) / target.name
+    # Create beside the target so Windows inherits the checkout's ACL, not the
+    # owner-only ACL of a TemporaryDirectory that would survive the final move.
+    with NamedTemporaryFile(prefix='.build-', suffix='.pyz', dir=internal, delete=False) as temporary:
+        candidate = Path(temporary.name)
+    try:
         zipapp.create_archive(internal.parent.parent / 'src', candidate, compressed=True)
         candidate.replace(target)
+    finally:
+        candidate.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':

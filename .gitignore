@@ -1,6 +1,6 @@
 # Local runtime and release artifacts
 /bin/internal/AgentChatSystem.pyz
-/bin/internal/.build-*/
+/bin/internal/.build-*
 /bin/local_chat.pyz
 /var/
 /release/
