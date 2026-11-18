@@ -235,5 +235,21 @@
   "recipientUnavailable": "{name} (unavailable)",
   "connectedUsers": "Connected users",
   "noConnectedUsers": "No users connected",
-  "manualMcpConfig": "Manual MCP configuration"
+  "manualMcpConfig": "Manual MCP configuration",
+  "participantIcon": "Participant icon",
+  "uploadIcon": "Choose image",
+  "iconHint": "PNG, JPG, GIF · Up to 10 MB. Shown on participant cards and messages.",
+  "iconProvider": "Provider logo (default)",
+  "iconBot": "Robot",
+  "iconTerminal": "Terminal",
+  "iconCommand": "Command",
+  "iconRadio": "Radio",
+  "iconMessage": "Message",
+  "iconHash": "Hash",
+  "iconUsers": "Team",
+  "iconImage": "Uploaded image",
+  "iconSaving": "Saving icon…",
+  "iconSaved": "Icon saved.",
+  "iconImageTypes": "Choose a PNG, JPG, or GIF image.",
+  "errorParticipantIcon": "Choose a participant icon."
 }

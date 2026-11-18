@@ -235,5 +235,21 @@
   "recipientUnavailable": "{name}（不可接收）",
   "connectedUsers": "在线用户",
   "noConnectedUsers": "暂无在线用户",
-  "manualMcpConfig": "手动配置 MCP"
+  "manualMcpConfig": "手动配置 MCP",
+  "participantIcon": "参与者图标",
+  "uploadIcon": "选择图片",
+  "iconHint": "PNG、JPG、GIF · 最大10 MB。显示在参与者卡片和消息中。",
+  "iconProvider": "提供商标志（默认）",
+  "iconBot": "机器人",
+  "iconTerminal": "终端",
+  "iconCommand": "命令",
+  "iconRadio": "无线电",
+  "iconMessage": "消息",
+  "iconHash": "井号",
+  "iconUsers": "团队",
+  "iconImage": "已上传图片",
+  "iconSaving": "正在保存图标…",
+  "iconSaved": "图标已保存。",
+  "iconImageTypes": "请选择PNG、JPG或GIF图片。",
+  "errorParticipantIcon": "请选择参与者图标。"
 }

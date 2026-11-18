@@ -235,5 +235,21 @@
   "recipientUnavailable": "{name} (недоступен)",
   "connectedUsers": "Подключённые пользователи",
   "noConnectedUsers": "Нет подключённых пользователей",
-  "manualMcpConfig": "Ручная настройка MCP"
+  "manualMcpConfig": "Ручная настройка MCP",
+  "participantIcon": "Значок участника",
+  "uploadIcon": "Выбрать изображение",
+  "iconHint": "PNG, JPG, GIF · До 10 МБ. Отображается на карточках участников и в сообщениях.",
+  "iconProvider": "Логотип поставщика (по умолчанию)",
+  "iconBot": "Робот",
+  "iconTerminal": "Терминал",
+  "iconCommand": "Команда",
+  "iconRadio": "Радио",
+  "iconMessage": "Сообщение",
+  "iconHash": "Решётка",
+  "iconUsers": "Команда участников",
+  "iconImage": "Загруженное изображение",
+  "iconSaving": "Сохранение значка…",
+  "iconSaved": "Значок сохранён.",
+  "iconImageTypes": "Выберите изображение PNG, JPG или GIF.",
+  "errorParticipantIcon": "Выберите значок участника."
 }

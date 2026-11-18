@@ -235,5 +235,21 @@
   "recipientUnavailable": "{name}（無法接收）",
   "connectedUsers": "線上使用者",
   "noConnectedUsers": "目前沒有線上使用者",
-  "manualMcpConfig": "手動設定 MCP"
+  "manualMcpConfig": "手動設定 MCP",
+  "participantIcon": "參與者圖示",
+  "uploadIcon": "選擇圖片",
+  "iconHint": "PNG、JPG、GIF · 最大10 MB。顯示於參與者卡片和訊息中。",
+  "iconProvider": "供應商標誌（預設）",
+  "iconBot": "機器人",
+  "iconTerminal": "終端機",
+  "iconCommand": "命令",
+  "iconRadio": "無線電",
+  "iconMessage": "訊息",
+  "iconHash": "井字號",
+  "iconUsers": "團隊",
+  "iconImage": "已上傳圖片",
+  "iconSaving": "正在儲存圖示…",
+  "iconSaved": "圖示已儲存。",
+  "iconImageTypes": "請選擇PNG、JPG或GIF圖片。",
+  "errorParticipantIcon": "請選擇參與者圖示。"
 }

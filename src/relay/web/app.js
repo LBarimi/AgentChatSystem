@@ -30,6 +30,12 @@ let chatDraftId = null;
 let roomRequest = 0;
 let setupRequest = 0;
 let setupAgent = null;
+let iconDraft = null;
+let iconSaving = false;
+const participantIconLabels = {
+  provider: "iconProvider", bot: "iconBot", terminal: "iconTerminal", command: "iconCommand",
+  radio: "iconRadio", "message-square": "iconMessage", hash: "iconHash", users: "iconUsers", image: "iconImage",
+};
 let participantKey = "";
 let messageKey = "";
 let channelKey = "";
@@ -84,6 +90,21 @@ function providerIcon(role) {
   image.height = 20;
   image.setAttribute("aria-hidden", "true");
   return image;
+}
+
+function participantAvatar(agent, previewUrl = "") {
+  const node = element("span", "avatar provider-avatar");
+  node.setAttribute("aria-hidden", "true");
+  if (previewUrl || /^image:[a-f0-9]{64}$/.test(agent.icon || "")) {
+    const image = element("img", "participant-image");
+    image.alt = "";
+    image.src = previewUrl || "/api/participants/icon?" + new URLSearchParams({ agent: agent.id, v: agent.icon.slice(6) });
+    image.addEventListener("error", () => node.replaceChildren(providerIcon(agent.role)), { once: true });
+    node.append(image);
+  } else {
+    node.append(agent.icon !== "provider" && participantIconLabels[agent.icon] ? icon(agent.icon) : providerIcon(agent.role));
+  }
+  return node;
 }
 
 function modelSettings(agent) {
@@ -213,9 +234,7 @@ function showParticipants() {
       button.type = "button";
       button.dataset.agent = agent.id;
       button.setAttribute("aria-label", t("agentSetup", { name: agent.name }));
-      const brandAvatar = element("span", "avatar provider-avatar");
-      brandAvatar.append(providerIcon(role));
-      button.append(brandAvatar, details, icon("chevron-right"));
+      button.append(participantAvatar(agent), details, icon("chevron-right"));
       if (role === "codex") button.append(modelSettings(agent));
       section.append(button);
     }
@@ -307,14 +326,14 @@ function row(message, participants) {
   content.append(meta);
   if (message.body) content.append(element("p", "message-body", message.body));
   if (message.attachments?.length) content.append(messageAttachments(message.attachments));
-  item.append(avatar(sender?.role || "user"), content);
+  item.append(sender ? participantAvatar(sender) : avatar("user"), content);
   return item;
 }
 
 function applyRoom(snapshot, repaint = false) {
   const boardChanged = current?.board_revision !== snapshot.board_revision;
   const lastParticipants = participantKey;
-  participantKey = JSON.stringify(snapshot.participants.map(({ id, name, role }) => [id, name, role]));
+  participantKey = JSON.stringify(snapshot.participants.map(({ id, name, role, icon }) => [id, name, role, icon]));
   const dirtyRoster = !current || JSON.stringify(snapshot.participants) !== JSON.stringify(current.participants);
   const dirtyUsers = !current || JSON.stringify(snapshot.users) !== JSON.stringify(current.users);
   current = snapshot;
@@ -759,6 +778,92 @@ for (const button of document.querySelectorAll("[data-folder]")) {
   });
 }
 
+function clearIconDraft() {
+  if (iconDraft?.previewUrl) URL.revokeObjectURL(iconDraft.previewUrl);
+  iconDraft = null;
+  el("icon-file").value = "";
+}
+
+function refreshIconEditor() {
+  if (!iconDraft) return;
+  const choice = el("agent-icon").value;
+  const value = choice === "image" ? iconDraft.icon : choice;
+  const preview = choice === "image" ? iconDraft.previewUrl : "";
+  el("icon-preview").replaceChildren(participantAvatar({ ...iconDraft, icon: value }, preview));
+  el("icon-fields").disabled = iconSaving;
+  el("icon-submit").disabled = iconSaving || (choice === "image" ? !iconDraft.file : choice === iconDraft.icon);
+}
+
+function initializeIconEditor(setup) {
+  clearIconDraft();
+  iconDraft = { ...setup, file: null, previewUrl: "" };
+  const choices = [...setup.icon_options, "image"].map((value) => {
+    const item = option(value, t(participantIconLabels[value]));
+    item.disabled = value === "image" && !setup.icon.startsWith("image:");
+    return item;
+  });
+  el("agent-icon").replaceChildren(...choices);
+  el("agent-icon").value = setup.icon.startsWith("image:") ? "image" : setup.icon;
+  el("icon-file").accept = setup.icon_upload_extensions.join(",");
+  showMessage("icon-error", "");
+  el("icon-feedback").textContent = "";
+  refreshIconEditor();
+}
+
+el("agent-icon").addEventListener("change", () => {
+  showMessage("icon-error", "");
+  el("icon-feedback").textContent = "";
+  refreshIconEditor();
+});
+el("icon-upload").addEventListener("click", () => el("icon-file").click());
+el("icon-file").addEventListener("change", () => {
+  const file = el("icon-file").files[0];
+  el("icon-file").value = "";
+  if (!iconDraft || !file || iconSaving) return;
+  const extension = file.name.trim().slice(file.name.trim().lastIndexOf(".")).toLowerCase();
+  const selected = selectUploads([], [file]);
+  const error = !iconDraft.icon_upload_extensions.includes(extension) ? t("iconImageTypes") : selected.error;
+  showMessage("icon-error", error);
+  el("icon-feedback").textContent = "";
+  if (error) return;
+  if (iconDraft.previewUrl) URL.revokeObjectURL(iconDraft.previewUrl);
+  iconDraft.file = selected.files[0];
+  iconDraft.previewUrl = URL.createObjectURL(file);
+  el("agent-icon").querySelector('[value="image"]').disabled = false;
+  el("agent-icon").value = "image";
+  refreshIconEditor();
+});
+el("icon-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!iconDraft || iconSaving || el("icon-submit").disabled) return;
+  const draft = iconDraft;
+  const choice = el("agent-icon").value;
+  let uploads = [];
+  iconSaving = true;
+  showMessage("icon-error", "");
+  el("icon-feedback").textContent = t("iconSaving");
+  refreshIconEditor();
+  try {
+    if (choice === "image") uploads = await uploadFiles([draft.file]);
+    const saved = await request("/api/participants/icon", { id: draft.id, icon: choice, upload_id: uploads[0]?.upload_id });
+    if (iconDraft === draft) {
+      initializeIconEditor({ ...draft, ...saved });
+      el("icon-feedback").textContent = t("iconSaved");
+    }
+    await loadRoom();
+  } catch (error) {
+    if (iconDraft === draft) {
+      showMessage("icon-error", error.message);
+      el("icon-feedback").textContent = "";
+    }
+  } finally {
+    iconSaving = false;
+    refreshIconEditor();
+    await discardUploads(uploads);
+  }
+});
+setupDialog.addEventListener("close", clearIconDraft);
+
 async function openSetup(agentId) {
   const requestId = ++setupRequest;
   const language = document.documentElement.lang;
@@ -767,6 +872,7 @@ async function openSetup(agentId) {
   if (requestId !== setupRequest) return;
   if (language !== document.documentElement.lang) return openSetup(agentId);
   setupAgent = setup.id;
+  initializeIconEditor(setup);
   el("agent-name").value = setup.name;
   showMessage("rename-error", "");
   el("setup-title").textContent = t("connectAgent", { name: setup.name });
@@ -999,6 +1105,7 @@ for (const [name, toggle] of Object.entries(sidePanels)) {
 
 document.addEventListener("languagechange", () => {
   closeChannelMenu();
+  for (const item of el("agent-icon").options) item.textContent = t(participantIconLabels[item.value]);
   if (current) applyRoom(current, true);
   connection(live);
   showChatFiles();

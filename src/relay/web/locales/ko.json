@@ -235,5 +235,21 @@
   "recipientUnavailable": "{name} (수신 불가)",
   "connectedUsers": "접속 중인 사용자",
   "noConnectedUsers": "접속 중인 사용자가 없습니다",
-  "manualMcpConfig": "MCP 수동 설정"
+  "manualMcpConfig": "MCP 수동 설정",
+  "participantIcon": "참가자 아이콘",
+  "uploadIcon": "이미지 선택",
+  "iconHint": "PNG, JPG, GIF · 최대 10 MB. 참가자 카드와 메시지에 표시됩니다.",
+  "iconProvider": "제공자 로고 (기본)",
+  "iconBot": "로봇",
+  "iconTerminal": "터미널",
+  "iconCommand": "명령",
+  "iconRadio": "무선",
+  "iconMessage": "메시지",
+  "iconHash": "해시",
+  "iconUsers": "팀",
+  "iconImage": "업로드한 이미지",
+  "iconSaving": "아이콘 저장 중…",
+  "iconSaved": "아이콘을 저장했습니다.",
+  "iconImageTypes": "PNG, JPG, GIF 이미지를 선택하세요.",
+  "errorParticipantIcon": "참가자 아이콘을 선택하세요."
 }

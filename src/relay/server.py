@@ -1,6 +1,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from configparser import Error as ConfigError
 from importlib.resources import files
+from hashlib import sha256
 from ipaddress import ip_address, ip_network
 from pathlib import Path
 from socketserver import TCPServer
@@ -18,7 +19,7 @@ from relay.board import Board, prepare_post
 from relay.chat_files import ChatFiles, prepare_chat_files
 from relay.errors import ApiError
 from relay.storage import ChannelStorage, StorageError, TEXT_BYTES
-from relay.uploads import MAX_FILES, MAX_FILE_BYTES, MAX_UPLOAD_REQUEST, UploadError, UploadStore, upload_policy, validate_file
+from relay.uploads import MAX_FILES, MAX_FILE_BYTES, MAX_UPLOAD_REQUEST, UploadError, UploadStore, file_data, prepare_files, upload_policy, validate_file
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, LEGACY_MAX_WAIT_SECONDS, MCP_VERSION, LEGACY_PNG_PROMPT
 from relay.settings import APP_NAME, LANGUAGES, LISTEN_HOST, LOOPBACK, Settings
 from relay.session_details import ParticipantDetails
@@ -27,6 +28,8 @@ from relay.presence import ConnectedUsers
 ROLES = ("codex", "claude")
 DEFAULT_CHANNEL = "general"
 MAX_PARTICIPANTS = 64
+PARTICIPANT_ICONS = ('provider', 'bot', 'terminal', 'command', 'radio', 'message-square', 'hash', 'users')
+ICON_IMAGE_TYPES = {'image/png', 'image/jpeg', 'image/gif'}
 MAX_BODY = 48_000
 TEXT_LIMIT = 10_000
 WAIT_LIMIT = MAX_WAIT_SECONDS
@@ -86,6 +89,11 @@ class Room:
                 PRIMARY KEY (message_id, agent_id)
             );
             CREATE INDEX IF NOT EXISTS delivery_inbox ON deliveries(agent_id, message_id);
+            CREATE TABLE IF NOT EXISTS participant_icons (
+                agent_id TEXT PRIMARY KEY REFERENCES participants(id),
+                mime_type TEXT NOT NULL,
+                data BLOB NOT NULL
+            );
         """)
         with self.db:
             self.db.execute('BEGIN')
@@ -101,6 +109,8 @@ class Room:
             participant_columns = {row['name'] for row in self.db.execute('PRAGMA table_info(participants)')}
             if 'removed_at' not in participant_columns:
                 self.db.execute('ALTER TABLE participants ADD COLUMN removed_at TEXT')
+            if 'icon' not in participant_columns:
+                self.db.execute("ALTER TABLE participants ADD COLUMN icon TEXT NOT NULL DEFAULT 'provider'")
             channel_columns = {row['name'] for row in self.db.execute('PRAGMA table_info(channels)')}
             if 'folder' not in channel_columns:
                 self.db.execute('ALTER TABLE channels ADD COLUMN folder TEXT')
@@ -335,8 +345,8 @@ class Room:
         if not isinstance(agent_id, str) or len(agent_id) > 32 or not agent_id.isascii():
             return None
         if include_removed:
-            return self.db.execute('SELECT id,role,name,removed_at FROM participants WHERE id=?', (agent_id,)).fetchone()
-        return self.db.execute('SELECT id,role,name FROM participants WHERE id=? AND removed_at IS NULL', (agent_id,)).fetchone()
+            return self.db.execute('SELECT id,role,name,icon,removed_at FROM participants WHERE id=?', (agent_id,)).fetchone()
+        return self.db.execute('SELECT id,role,name,icon FROM participants WHERE id=? AND removed_at IS NULL', (agent_id,)).fetchone()
 
     @staticmethod
     def _name(value, label, key):
@@ -369,7 +379,7 @@ class Room:
             with self.db:
                 self.db.execute('INSERT INTO participants(id,role,name) VALUES (?,?,?)', (agent_id, role, name))
             self._notify()
-            return {'id': agent_id, 'role': role, 'name': name}
+            return {'id': agent_id, 'role': role, 'name': name, 'icon': 'provider'}
 
     def rename(self, payload):
         agent_id = payload.get('id')
@@ -398,6 +408,45 @@ class Room:
                 self._notify_board()
             return {'id': agent_id, 'removed': True}
 
+    def set_participant_icon(self, payload):
+        choice = payload.get('icon')
+        if not isinstance(choice, str) or choice not in (*PARTICIPANT_ICONS, 'image'):
+            raise RequestError('참가자 아이콘을 선택하세요.', key='errorParticipantIcon')
+        with self.uploads.lock, self.changed:
+            participant = self._participant(payload.get('id'))
+            if participant is None:
+                raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
+            uploaded = []
+            if choice == 'image':
+                uploaded = [{'upload_id': payload.get('upload_id')}]
+                _, mime, source = prepare_files(uploaded, self.uploads)[0]
+                if mime not in ICON_IMAGE_TYPES:
+                    raise RequestError('아이콘은 PNG, JPG, GIF 이미지로 설정하세요.', 415, key='iconImageTypes')
+                data = file_data(source)
+                choice = 'image:' + sha256(data).hexdigest()
+            if choice != participant['icon']:
+                with self.db:
+                    if uploaded:
+                        self.db.execute('INSERT OR REPLACE INTO participant_icons VALUES (?,?,?)',
+                                        (participant['id'], mime, data))
+                    else:
+                        self.db.execute('DELETE FROM participant_icons WHERE agent_id=?', (participant['id'],))
+                    self.db.execute('UPDATE participants SET icon=? WHERE id=?', (choice, participant['id']))
+                self._notify()
+            self.uploads.discard(uploaded)
+            return dict(participant) | {'icon': choice}
+
+    def participant_icon(self, agent_id, version=''):
+        with self.changed:
+            participant = self._participant(agent_id, include_removed=True)
+            if (participant is None or not participant['icon'].startswith('image:')
+                    or (version and participant['icon'] != 'image:' + version)):
+                raise RequestError('아이콘 이미지를 찾을 수 없습니다.', 404, key='errorUnavailable')
+            image = self.db.execute('SELECT mime_type,data FROM participant_icons WHERE agent_id=?', (agent_id,)).fetchone()
+            if image is None:
+                raise RequestError('아이콘 이미지를 찾을 수 없습니다.', 404, key='errorUnavailable')
+            return dict(image)
+
     def setup(self, agent_id, port, language='en'):
         from relay.cli import connection_setup
         with self.changed:
@@ -406,6 +455,8 @@ class Room:
                 raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
             return {
                 **dict(participant), **connection_setup(port, agent_id, participant['role'], language=language),
+                'icon_options': PARTICIPANT_ICONS,
+                'icon_upload_extensions': ['.png', '.jpg', '.gif'],
             }
 
     def participants(self, channel_id=None):
@@ -413,7 +464,7 @@ class Room:
             scope = 'AND m.channel_id=?' if channel_id else ''
             params = (self._channel(channel_id)['id'],) if channel_id else ()
             pending = dict(self.db.execute(f'SELECT d.agent_id, COUNT(*) {PENDING_MESSAGES} {scope} GROUP BY d.agent_id', params))
-            participants = self.db.execute('SELECT id,role,name FROM participants WHERE removed_at IS NULL ORDER BY rowid').fetchall()
+            participants = self.db.execute('SELECT id,role,name,icon FROM participants WHERE removed_at IS NULL ORDER BY rowid').fetchall()
             return [
                 dict(p) | {
                     'waiting': p['id'] in self.waiters and (
@@ -431,7 +482,7 @@ class Room:
             return []
         placeholders = ','.join('?' for _ in ids)
         return [dict(row) for row in self.db.execute(f'''
-            SELECT id,role,name FROM participants WHERE removed_at IS NOT NULL AND id IN ({placeholders})
+            SELECT id,role,name,icon FROM participants WHERE removed_at IS NOT NULL AND id IN ({placeholders})
         ''', tuple(ids))]
 
     def snapshot(self, channel_id):
@@ -680,7 +731,7 @@ class Handler(BaseHTTPRequestHandler):
         if download_name is not None:
             self.send_header('Content-Disposition', f"attachment; filename=\"download\"; filename*=UTF-8''{quote(download_name, safe='')}")
         self.send_header("Content-Security-Policy",
-                         "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+                         "default-src 'self'; img-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         self.end_headers()
         self.wfile.write(data)
 
@@ -806,6 +857,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.room.setup(agent_id, self.server.server_port, language))
             elif url.path == '/api/participants':
                 self._json({'participants': self.room.participants(channel_id)})
+            elif url.path == '/api/participants/icon':
+                image = self.room.participant_icon(params.get('agent', [''])[0], params.get('v', [''])[0])
+                self._bytes(200, image['data'], image['mime_type'])
             elif url.path == '/api/board':
                 self._json(self.room.list_board_posts(self._number(params, 'before')))
             elif url.path == '/api/board/post':
@@ -896,6 +950,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.room.register(payload), 201)
             elif self.path == '/api/participants/rename':
                 self._json(self.room.rename(payload))
+            elif self.path == '/api/participants/icon':
+                self._json(self.room.set_participant_icon(payload))
             elif self.path == '/api/participants/delete':
                 self._json(self.room.remove_participant(payload.get('id')))
             elif self.path == '/api/channels':
