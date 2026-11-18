@@ -637,6 +637,7 @@ class Handler(BaseHTTPRequestHandler):
         "/": ("index.html", "text/html; charset=utf-8"),
         "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
         "/uploads.js": ("uploads.js", "text/javascript; charset=utf-8"),
+        "/recipient.js": ("recipient.js", "text/javascript; charset=utf-8"),
         "/app.js": ("app.js", "text/javascript; charset=utf-8"),
         "/board.js": ("board.js", "text/javascript; charset=utf-8"),
         "/style.css": ("style.css", "text/css; charset=utf-8"),

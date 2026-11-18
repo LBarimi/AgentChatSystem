@@ -232,6 +232,7 @@
   "attachmentCount": "附件：{count}個",
   "attachmentTypes": "PNG · JPG · TXT · CSV · XLSX · XLSM · JSON · XML · PDF · PPTX · MP4 · GIF",
   "attachmentHint": "PNG · JPG · TXT · CSV · XLSX · XLSM · JSON · XML · PDF · PPTX · MP4 · GIF — 每個檔案最大10 MB。 每次最多附加30個檔案。",
+  "recipientUnavailable": "{name}（無法接收）",
   "connectedUsers": "線上使用者",
   "noConnectedUsers": "目前沒有線上使用者"
 }

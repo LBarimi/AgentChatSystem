@@ -5,6 +5,10 @@ const messages = el("messages");
 const scrollRegion = el("scroll-region");
 const input = el("body");
 const recipient = el("recipient");
+const recipientChoice = new RecipientSelection(localStorage);
+if (recipientChoice.id !== "all") {
+  recipient.replaceChildren(new Option(recipientChoice.name || recipientChoice.id, recipientChoice.id, true, true));
+}
 const send = el("send");
 const chatFileInput = el("chat-file-input");
 const chatFileList = el("chat-file-list");
@@ -115,9 +119,9 @@ function refreshControls() {
   el("show-folders").disabled = !current;
   el("clear-chat").disabled = !ready || current.total_messages === 0;
   for (const button of document.querySelectorAll(".channel-more")) button.disabled = !ready;
-  recipient.disabled = !current?.participants.length;
+  recipient.disabled = !current;
   el("chat-attach").disabled = sending || !current;
-  send.disabled = sending || !ready || !recipient.value || (!input.value.trim() && !chatFiles.length);
+  send.disabled = sending || !ready || !recipientChoice.available(current.participants) || (!input.value.trim() && !chatFiles.length);
 }
 
 function showChannels() {
@@ -249,11 +253,13 @@ function option(value, name) {
 }
 
 function showRecipients() {
-  const target = recipient.value || drafts.get(activeChannel)?.recipient || "codex";
-  const options = current.participants.map((agent) => option(agent.id, agent.name));
-  options.push(options.length ? option("all", t("all")) : option("", t("noAgents")));
+  const options = recipientChoice.options(current.participants, t).map(({ id, name, disabled }) => {
+    const node = option(id, name);
+    node.disabled = Boolean(disabled);
+    return node;
+  });
   recipient.replaceChildren(...options);
-  if (target === "all" || current.participants.some((agent) => agent.id === target)) recipient.value = target;
+  recipient.value = recipientChoice.id;
 }
 
 function messageAttachments(attachments) {
@@ -366,7 +372,7 @@ async function loadRoom() {
 function switchChannel(channelId) {
   if (channelId === activeChannel) return;
   closeChannelMenu();
-  drafts.set(activeChannel, { body: input.value, recipient: recipient.value, files: chatFiles, requestId: chatDraftId });
+  drafts.set(activeChannel, { body: input.value, files: chatFiles, requestId: chatDraftId });
   activeChannel = channelId;
   localStorage.setItem("relay-channel", channelId);
   current = null;
@@ -378,7 +384,6 @@ function switchChannel(channelId) {
   chatFiles = draft?.files || [];
   chatDraftId = draft?.requestId || null;
   showChatFiles();
-  recipient.replaceChildren();
   messages.replaceChildren();
   scrollRegion.scrollTop = 0;
   el("empty").hidden = true;
@@ -438,7 +443,15 @@ function chatDraftChanged() {
   refreshControls();
 }
 input.addEventListener("input", chatDraftChanged);
-recipient.addEventListener("change", chatDraftChanged);
+recipient.addEventListener("change", () => {
+  if (!recipientChoice.choose(recipient.value, current?.participants || [])) {
+    if (current) showRecipients();
+    return;
+  }
+  // A changed target is a new send intent, including drafts in other channels.
+  for (const draft of drafts.values()) draft.requestId = null;
+  chatDraftChanged();
+});
 input.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
     event.preventDefault();
@@ -453,7 +466,7 @@ el("composer").addEventListener("submit", async (event) => {
   showMessage("form-error", "");
   const body = input.value;
   const selectedChannel = activeChannel;
-  const target = recipient.value;
+  const target = recipientChoice.id;
   chatDraftId ||= draftId();
   const requestId = chatDraftId;
   let attachments = [];
@@ -471,7 +484,7 @@ el("composer").addEventListener("submit", async (event) => {
       }
       input.focus();
     } else if (drafts.get(selectedChannel)?.requestId === requestId) {
-      drafts.set(selectedChannel, { body: "", recipient: target, files: [], requestId: null });
+      drafts.set(selectedChannel, { body: "", files: [], requestId: null });
     }
   } catch (error) {
     if (activeChannel === selectedChannel) showMessage("form-error", error.message);
