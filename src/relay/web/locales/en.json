@@ -234,5 +234,6 @@
   "attachmentHint": "PNG · JPG · TXT · CSV · XLSX · XLSM · JSON · XML · PDF · PPTX · MP4 · GIF — Each file can be up to 10 MB. Attach up to 30 files at a time.",
   "recipientUnavailable": "{name} (unavailable)",
   "connectedUsers": "Connected users",
-  "noConnectedUsers": "No users connected"
+  "noConnectedUsers": "No users connected",
+  "manualMcpConfig": "Manual MCP configuration"
 }

@@ -773,6 +773,7 @@ async function openSetup(agentId) {
   el("setup-id").textContent = roleName[setup.role] + " · " + setup.id;
   el("setup-install").hidden = !setup.install_prompt;
   el("setup-install-preview").open = false;
+  el("setup-manual-config").open = false;
   el("setup-install-prompt").textContent = setup.install_prompt || "";
   el("setup-install-instruction").textContent = setup.role === "codex"
     ? t("codexInstall")
@@ -782,6 +783,7 @@ async function openSetup(agentId) {
     ? t("codexConfigHint")
     : t("claudeConfigHint", { path: setup.config_path || "~/.claude.json" });
   el("setup-config").textContent = setup.config;
+  el("setup-config-feedback").textContent = "";
   el("setup-prompt").textContent = setup.prompt;
   el("setup-feedback").textContent = "";
   if (!setupDialog.open) setupDialog.showModal();

@@ -234,5 +234,6 @@
   "attachmentHint": "PNG · JPG · TXT · CSV · XLSX · XLSM · JSON · XML · PDF · PPTX · MP4 · GIF — 每个文件最大10 MB。 每次最多附加30个文件。",
   "recipientUnavailable": "{name}（不可接收）",
   "connectedUsers": "在线用户",
-  "noConnectedUsers": "暂无在线用户"
+  "noConnectedUsers": "暂无在线用户",
+  "manualMcpConfig": "手动配置 MCP"
 }

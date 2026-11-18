@@ -234,5 +234,6 @@
   "attachmentHint": "PNG · JPG · TXT · CSV · XLSX · XLSM · JSON · XML · PDF · PPTX · MP4 · GIF — ファイルは1個あたり10 MBまでです。 一度に最大30個のファイルを添付できます。",
   "recipientUnavailable": "{name}（受信不可）",
   "connectedUsers": "接続中のユーザー",
-  "noConnectedUsers": "接続中のユーザーはいません"
+  "noConnectedUsers": "接続中のユーザーはいません",
+  "manualMcpConfig": "MCP の手動設定"
 }

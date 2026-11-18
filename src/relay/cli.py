@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 from urllib.request import ProxyHandler, Request, build_opener
 
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, MCP_TOOL_TIMEOUT_SECONDS, MCP_VERSION
-from relay.prompts import render_connection_prompts
+from relay.prompts import render_connection_prompts, setup_verification
 from relay.settings import APP_NAME, ARCHIVE, LISTEN_HOST, LOOPBACK, PROJECT, Settings
 from relay.uploads import MAX_FILES, UploadError, upload_name, upload_size
 
@@ -192,18 +192,26 @@ def connection_setup(port, agent_id, role, *, language='en'):
             'args = ' + json.dumps(args, ensure_ascii=False),
             f'tool_timeout_sec = {MCP_TOOL_TIMEOUT_SECONDS}',
         ])
-        config_path = Path.home() / '.codex' / 'config.toml'
+        config_path = Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex').expanduser() / 'config.toml'
         config_format = 'toml'
     else:
         snippet = json.dumps({'mcpServers': {server: {'command': exe, 'args': args}}}, ensure_ascii=False, indent=2)
         config_path = Path.home() / '.claude.json'
         config_format = 'json'
+    register = ([role, 'mcp', 'add', server, '--', exe, *args] if role == 'codex' else
+                ['claude', 'mcp', 'add', '--transport', 'stdio', '--scope', 'user', server, '--', exe, *args])
+    inspect = [role, 'mcp', 'get', server] + (['--json'] if role == 'codex' else [])
     values = {
         'app': APP_NAME,
         'agent': agent_id,
         'server': server,
         'config_path': str(config_path),
         'configuration': f'```{config_format}\n{snippet}\n```',
+        'launch_spec': '```json\n' + json.dumps({'command': exe, 'args': args}, ensure_ascii=False, indent=2) + '\n```',
+        'registration_argv': '```json\n' + json.dumps(register, ensure_ascii=False) + '\n```',
+        'inspection_argv': '```json\n' + json.dumps(inspect, ensure_ascii=False) + '\n```',
+        'verification': '```python\n' + setup_verification([exe, *args], agent_id) + '```',
+        'port': port,
         'wait_seconds': DEFAULT_WAIT_SECONDS,
         'legacy_command': attachment_command(port, agent_id),
     }
@@ -243,7 +251,7 @@ def main():
                 print(setup['config'])
             else:
                 print('Codex config.toml:\n' + connection_setup(port, 'codex', 'codex')['config'])
-                print('\nClaude Desktop claude_desktop_config.json:\n' + connection_setup(port, 'claude', 'claude')['config'])
+                print('\nClaude Code user MCP configuration:\n' + connection_setup(port, 'claude', 'claude')['config'])
             return 0
         if args.action == "status":
             result = client.call("/api/room?" + urlencode({'channel': args.channel}))

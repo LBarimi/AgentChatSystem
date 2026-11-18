@@ -234,5 +234,6 @@
   "attachmentHint": "PNG · JPG · TXT · CSV · XLSX · XLSM · JSON · XML · PDF · PPTX · MP4 · GIF — Размер каждого файла — до 10 МБ. Можно прикрепить до 30 файлов за раз.",
   "recipientUnavailable": "{name} (недоступен)",
   "connectedUsers": "Подключённые пользователи",
-  "noConnectedUsers": "Нет подключённых пользователей"
+  "noConnectedUsers": "Нет подключённых пользователей",
+  "manualMcpConfig": "Ручная настройка MCP"
 }

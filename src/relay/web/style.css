@@ -363,6 +363,7 @@ dialog::backdrop { background: #00000066; }
 .board-files li { padding: 4px 7px 4px 10px; background: var(--surface); border-radius: 7px; font-size: 12px; }
 .prompt-preview { margin-top: 7px; color: var(--muted); font-size: 12px; }
 .prompt-preview summary { width: fit-content; cursor: pointer; }
+.manual-config > .setup-label { margin-top: 10px; }
 .folder-form { display: grid; gap: 6px; padding-bottom: 13px; border-bottom: 1px solid var(--border); }
 .folder-form > p { margin-top: 0; }
 .folder-options, .folder-buttons { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }

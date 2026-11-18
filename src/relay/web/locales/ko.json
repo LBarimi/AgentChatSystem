@@ -234,5 +234,6 @@
   "attachmentHint": "PNG · JPG · TXT · CSV · XLSX · XLSM · JSON · XML · PDF · PPTX · MP4 · GIF — 파일은 개당 10 MB까지 첨부할 수 있습니다. 파일은 한 번에 최대 30개까지 첨부할 수 있습니다.",
   "recipientUnavailable": "{name} (수신 불가)",
   "connectedUsers": "접속 중인 사용자",
-  "noConnectedUsers": "접속 중인 사용자가 없습니다"
+  "noConnectedUsers": "접속 중인 사용자가 없습니다",
+  "manualMcpConfig": "MCP 수동 설정"
 }
