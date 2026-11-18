@@ -54,7 +54,13 @@ class PlatformSmoke(unittest.TestCase):
                 if windows:
                     subprocess.run([*start, '-NoOpen'], cwd=home, check=True, timeout=25)
                 else:
-                    process = subprocess.Popen(start, cwd=home, stdin=subprocess.DEVNULL)
+                    diagnostics = home / 'startup diagnostics'
+                    diagnostics.mkdir()
+                    (diagnostics / 'sitecustomize.py').write_text(
+                        'import faulthandler\nfaulthandler.dump_traceback_later(5)\n', encoding='utf-8',
+                    )
+                    environment = dict(os.environ, PYTHONPATH=str(diagnostics))
+                    process = subprocess.Popen(start, cwd=home, stdin=subprocess.DEVNULL, env=environment)
                 opener = build_opener(ProxyHandler({}))
 
                 def call(route, payload=None):

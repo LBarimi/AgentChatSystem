@@ -31,6 +31,6 @@ jobs:
           )
           print(result.stdout, end='')
           if result.returncode:
-              summary = result.stdout[-4000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              summary = result.stdout[-12000:].replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print(f'::error title=Platform smoke tests::{summary}')
               raise SystemExit(result.returncode)
