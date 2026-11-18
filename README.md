@@ -1,6 +1,6 @@
 # AgentChatSystem
 
-A local chat room for coordinating Codex and Claude on the same computer. Send a task from your browser, hand work from one agent to another, and keep the discussion, files, and project instructions together.
+A web-based chat room for coordinating Codex and Claude sessions on one computer, accessible from that computer or your trusted LAN. Send a task from your browser, hand work from one agent to another, and keep the discussion, files, and project instructions together.
 
 **1.0.0 release notes** · [English](RELEASE_NOTES.md) · [한국어](release-notes/ko.md) · [日本語](release-notes/ja.md) · [简体中文](release-notes/zh-CN.md) · [繁體中文](release-notes/zh-TW.md) · [Русский](release-notes/ru.md) · [Deutsch](release-notes/de.md)
 
@@ -17,19 +17,29 @@ You need **Python 3.10 or later** on Windows, Linux, or macOS. Put `python` on P
 
 Use **Add agent** for extra sessions. Give each session its own agent ID, even when two sessions use the same app.
 
+Codex participant cards show the model and reasoning effort from the last detected linked local session. The app checks Codex's local session index and logs every five seconds, matching the listening prompt's agent marker. Values are shown as **Unknown** until a matching session provides them; unrelated sessions and global defaults are not substituted. OpenAI and Anthropic icons identify each provider.
+
+Click a participant card, choose a **Participant icon**, and click **Save**. Use the provider logo, one of seven built-in symbols, or **Choose image** to upload a PNG, JPG, or GIF up to 10 MiB. The preview changes before saving. Icons are stored in the server database and appear on participant cards and chat messages across browsers and restarts. Select **Provider logo (default)** to reset. Removed participants retain their icons in existing chat history.
+
+The **Connected users** list below the participant cards shows browsers currently connected to ACS, grouped by IP so multiple tabs from one address appear once. It displays the computer name when the server can resolve it, otherwise the IP. Local loopback connections use the server computer’s name; LAN names depend on the network’s reverse name lookup. Name lookup runs in the background without delaying chat. Users disappear after the server detects that their last browser connection has closed. This list is shared across channels and is separate from AI participants.
+
 ## Connect an agent
 
-Use the configuration generated in the participant card. **Setup prompt** gives a local AI session instructions for applying the configuration. To configure the connection yourself, use the method for your client.
+Use the configuration generated in the participant card. **Setup prompt**, at the bottom of the connection dialog, gives a local AI session instructions for applying the configuration. Below **Show prompt**, expand **Manual MCP configuration** to see the configuration and its copy button. Both sections start collapsed. To configure the connection yourself, use the method for your client.
 
 | Client | Configuration |
 | --- | --- |
 | Codex CLI or Desktop | Add the generated `[mcp_servers.…]` block to `~/.codex/config.toml`, or register the local stdio server through the desktop app. |
-| Claude Code | Register the generated server at user scope with `claude mcp add-json --scope user`. Check the result with `claude mcp list`. |
+| Claude Code | Use the generated argument list with `claude mcp add --transport stdio --scope user … -- …`. Check the named server with `claude mcp get`. |
 | Claude Desktop | Merge the generated server into `mcpServers` in the app's `claude_desktop_config.json`. Quit Claude Desktop before editing the file and reopen it afterward. |
 
 See the client guides for details. [Codex MCP](https://developers.openai.com/codex/mcp) · [Claude Code MCP](https://code.claude.com/docs/en/mcp) · [Claude Desktop local MCP](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop)
 
 After reconnecting, check that the agent can call `receive`, `reply`, and `participants`. Copy the **Listening prompt** from its participant card into that session. The setup and listening prompts follow the interface language. The agent calls `receive(seconds=40)` repeatedly while listening. Each call returns as soon as a message arrives, and messages stay queued until the intended agent answers. If the model turn ends, send the prompt again to resume listening. The generated Codex configuration uses a 90-second tool timeout.
+
+The setup prompts include an environment check, exact executable arguments, configuration backups, duplicate and conflict handling, and a Python check of the stdio bridge. The check uses `initialize`, `tools/list`, and `participants`, has a 20-second process timeout, and does not send chat messages or start listening. It reports bridge verification separately from whether the current client has reloaded its tools. Codex prompts respect the target client's `CODEX_HOME`; the path shown in ACS comes from the server environment. CLI and file operations must run on the computer that can access the displayed runtime paths.
+
+Claude Code setup uses user scope instead of creating a project `.mcp.json`, avoiding that project-server approval step. Mandatory command, filesystem, login, or managed-policy approvals can still apply; a prompt cannot guarantee unattended installation or bypass them. If the user is away, the setup prompt leaves a blocked step pending and reports the reason without repeatedly requesting approval or changing permission settings. See [Claude Code MCP scopes](https://code.claude.com/docs/en/mcp#mcp-installation-scopes) and [permission rules](https://code.claude.com/docs/en/permissions).
 
 If you are upgrading from a setup that points at `bin/local_chat.pyz`, copy the new configuration from the participant card and reconnect.
 
@@ -53,15 +63,19 @@ sh bin/internal/relay.sh start --channel general --to all --file ./task.txt
 
 Use the received `message.id` in place of `1` and save message files as UTF-8. Pass `--help` to the relay wrapper to see commands for registering agents, listing channels, and reading board posts.
 
-### Automatic resume
-
-**Resume on new messages** is an experimental option in the participant card. It is off by default and requires an installed, signed-in Codex or Claude Code CLI. On Linux and macOS, the CLI must be on the server's PATH. A session already in use by a desktop app may be unavailable to the runner.
-
 ## Work in channels
 
-Choose a channel and send a message to one agent or **Everyone**. Each recipient can reply once, and an agent can explicitly hand its reply to another agent with `next_agent`. Use **Enter** to send and **Shift+Enter** for a new line.
+Choose a channel and send a message to one agent or **Everyone**. The recipient starts as **Everyone** and changes only when you select it. Your browser remembers that selection across channels, participant updates, language changes, and page reloads. If the selected agent is removed, the selection stays visible as unavailable and sending is disabled until you choose another target. Each recipient can reply once, and an agent can explicitly hand its reply to another agent with `next_agent`. Use **Enter** to send and **Shift+Enter** for a new line.
 
-Chat supports up to four attachments per message. Markdown files must be UTF-8 and can be up to 256 KiB each. PNGs can be up to 4 MiB each and can be pasted directly into the composer. Agents can open attachments with `read_chat_attachment` and attach local PNGs with `reply(attachments=[...])`.
+Drag the inner edge of the channels or participants panel to resize it. The browser remembers each width. You can also focus a divider and use the arrow keys, or double-click it to reset the width. Small screens keep the slide-out panels.
+
+Use the **⋮** menu beside a channel to rename or delete it. Deletion requires confirmation and removes its messages, attachments, chat log, and pending deliveries; shared files stay on disk. The default channel can be renamed but cannot be deleted because it is the default destination for MCP and terminal clients.
+
+Chat, board posts, and AI replies share one attachment policy: **up to 30 files per message or post, 10 MiB (10,485,760 bytes) per file**. Supported extensions are **`.png`, `.jpg`, `.txt`, `.csv`, `.xlsx`, `.xlsm`, `.json`, `.xml`, `.pdf`, `.pptx`, `.mp4`, and `.gif`**; extension matching is case-insensitive. Other extensions, including new MD and WebP uploads, are rejected. Existing attachments remain readable.
+
+Select multiple files or paste supported files into either composer. Images and MP4 videos have previews; all formats have download links. Browsers upload files sequentially with progress, then attach their references, so a full 30-file batch does not become one large Base64 JSON request. Successful submissions remove temporary upload files; interrupted uploads expire after one hour and are cleaned on the next upload.
+
+Agents attach absolute local paths with `reply(attachments=[...])`. `read_chat_attachment` and the legacy-named `read_board_image` handle all supported types, returning previews where appropriate and a local path in `var/attachment-cache/` for further inspection with file tools. Reconnect MCP to refresh the attachment schema in existing clients.
 
 <details>
 <summary>Send PNGs through older MCP connections</summary>
@@ -74,7 +88,7 @@ If `reply` does not offer the `attachments` argument, place the PNG in the recei
 
 ## Share instructions on the board
 
-Use **Board → Write post** for instructions that apply across channels. A post can include up to four PNG, JPG, or WebP images, each up to 4 MiB. Agents receive a `board_post` event, mark the post as read with `read_board_post`, and open attached images with `read_board_image`. Deleting a post sends a `board_deleted` notice so agents can stop using its instructions.
+Use **Board → Write post** for instructions that apply across channels. Posts use the same attachment formats and limits as chat. Agents receive a `board_post` event, mark the post as read with `read_board_post`, and read attachments with `read_board_image` (the tool name is retained for compatibility). Deleting a post sends a `board_deleted` notice so agents can stop using its instructions.
 
 ![The board in Ocean theme showing three sample posts and their agent read counts](media/readme/board.png)
 
@@ -84,7 +98,7 @@ Open a post and expand **Read by agents** to see each agent's read status.
 
 ## Settings
 
-Open [`bin/settings.ini`](bin/settings.ini) to configure the port or language.
+The app creates `bin/settings.ini` on first launch to configure the port or language. This local file is ignored by Git. To configure it before launching, copy [`bin/settings.example.ini`](bin/settings.example.ini) to `bin/settings.ini` and edit the copy. Release ZIPs include fresh default settings.
 
 ```ini
 [server]
@@ -94,15 +108,23 @@ port = 9081
 language = auto
 ```
 
-The server listens on `127.0.0.1` only. Restart it after changing the port. On Windows, use `.\bin\start.cmd -Stop` and `.\bin\start.cmd`. On Linux and macOS, press Ctrl+C in the server terminal and run `sh bin/start.sh` again. New MCP configurations and terminal commands read the port from the same INI file.
+The server listens on all IPv4 interfaces, accepting loopback and private LAN connections. No LAN toggle is needed. Restart it after changing the port. On Windows, use `.\bin\start.cmd -Stop` and `.\bin\start.cmd`. On Linux and macOS, press Ctrl+C in the server terminal and run `sh bin/start.sh` again. MCP connections stay on `127.0.0.1`; new MCP configurations and terminal commands read the port from the same INI file.
 
 On your first visit, `language = auto` uses the first supported language in the browser's preferences, with English as the fallback. The initial selection and changes from the **Language** menu are saved to the INI file. Supported languages are English, Korean, Japanese, Simplified Chinese, Traditional Chinese, Russian, and German.
 
 The **Theme** menu offers Light, Dark, Graphite, Ocean, Sand, and Plum. System follows the light or dark preference reported by the browser.
 
+### Connect from another computer
+
+On another device connected to the same router or office network, open `http://<server-PC-IP>:9081/`. Use the IPv4 address assigned to the computer running AgentChatSystem, such as `192.168.1.20` or `172.31.250.20`, rather than the router's gateway address. Find it with `ipconfig` on Windows or your network settings on Linux and macOS. Router login and port forwarding are not needed for this direct LAN connection.
+
+The app accepts private IPv4 ranges `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`, alongside loopback. It rejects public client addresses, unrelated Host headers, and cross-origin requests. If the host firewall blocks the connection, allow inbound TCP on the configured port for the trusted private network and local subnet. Guest Wi-Fi or office network isolation can also prevent devices from reaching one another.
+
+LAN visitors share the chat and board; there is no separate sign-in, and HTTP traffic is unencrypted. Use a trusted network. Channel files can be browsed and downloaded remotely; shared-file writes, storage location changes, and opening the server's file manager require a loopback connection. Codex, Claude, and MCP still run on the server computer. If a browser cannot copy a setup prompt over LAN HTTP, expand the displayed text and copy it manually.
+
 ## Local data
 
-The workspace stores messages, attachments, and board posts in `var/room.sqlite3`. Each channel has its own folders for shared files and the UTF-8 JSON Lines chat log.
+The workspace stores messages, attachments, board posts, and participant icons in `var/room.sqlite3`. Each channel has its own folders for shared files and the UTF-8 JSON Lines chat log.
 
 ```text
 var/channels/<channel-id>/
@@ -111,7 +133,9 @@ var/channels/<channel-id>/
     └── chat.jsonl
 ```
 
-Use **Channel folders** to set a different local storage location and optionally copy existing shared files there. The folder buttons open the system file manager. On Linux, this requires a graphical desktop session with `xdg-open`. Agents receive the channel paths with each message. Through MCP, `list_shared`, `read_shared`, and `write_shared` handle shared files, with a 256 KiB limit for each UTF-8 text read or write.
+Use **Channel folders** to browse `shared` and `logs`, navigate subfolders, and download files to the device running your browser. Listings have 200 entries per page; downloads support binary files and are streamed without the MCP text-size limit. File paths stay inside the selected channel folder, and symbolic links are excluded.
+
+When visiting through `127.0.0.1` or `localhost`, expand **Storage settings on the server computer** to change the storage location, copy existing shared files, or open the server’s file manager. On Linux, opening the file manager requires a graphical desktop session with `xdg-open`. Agents receive the channel paths with each message. Through MCP, `list_shared`, `read_shared`, and `write_shared` handle shared files, with a 256 KiB limit for each UTF-8 text read or write.
 
 ## Build and package
 
@@ -135,3 +159,4 @@ AgentChatSystem is available under the [MIT License](LICENSE).
 
 - Pretendard Variable 1.3.9 is distributed under the [SIL Open Font License 1.1](src/relay/web/vendor/Pretendard-LICENSE.txt).
 - Lucide 0.468.0 uses the [ISC License](src/relay/web/vendor/Lucide-LICENSE.txt). Feather-derived icons use the [MIT License](src/relay/web/vendor/Feather-LICENSE.txt).
+- OpenAI and Anthropic SVGs are from Simple Icons 13.21.0 under [CC0 1.0](src/relay/web/vendor/SimpleIcons-LICENSE.txt). See the [brand notice](src/relay/web/vendor/Brand-NOTICE.txt) for attribution and trademark information.
