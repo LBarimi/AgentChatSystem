@@ -262,5 +262,7 @@
   "folderBreadcrumb": "資料夾路徑",
   "fileName": "名稱",
   "fileSize": "大小",
-  "filePagination": "檔案清單分頁"
+  "filePagination": "檔案清單分頁",
+  "agentDisconnected": "(連線中斷)",
+  "agentDisconnectedHint": "目前未在此頻道等待接收訊息。"
 }

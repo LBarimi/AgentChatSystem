@@ -71,6 +71,8 @@ Use the received `message.id` in place of `1` and save message files as UTF-8. P
 
 Choose a channel and send a message to one agent or **Everyone**. The recipient starts as **Everyone** and changes only when you select it. Your browser remembers that selection across channels, participant updates, language changes, and page reloads. If the selected agent is removed, the selection stays visible as unavailable and sending is disabled until you choose another target. Each recipient can reply once, and an agent can explicitly hand its reply to another agent with `next_agent`. Use **Enter** to send and **Shift+Enter** for a new line.
 
+Participant cards show a red **(Disconnected)** label next to the nickname whenever an agent is not actively waiting for messages in the selected channel. It disappears when `receive` starts waiting again. This reflects the current receive state, including pauses while an agent works on a task.
+
 Drag the inner edge of the channels or participants panel to resize it. The browser remembers each width. You can also focus a divider and use the arrow keys, or double-click it to reset the width. Small screens keep the slide-out panels.
 
 Use the **⋮** menu beside a channel to rename or delete it. Deletion requires confirmation and removes its messages, attachments, chat log, and pending deliveries; shared files stay on disk. The default channel can be renamed but cannot be deleted because it is the default destination for MCP and terminal clients.

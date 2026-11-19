@@ -262,5 +262,7 @@
   "folderBreadcrumb": "Folder path",
   "fileName": "Name",
   "fileSize": "Size",
-  "filePagination": "File pages"
+  "filePagination": "File pages",
+  "agentDisconnected": "(Disconnected)",
+  "agentDisconnectedHint": "Not currently listening for messages in this channel."
 }

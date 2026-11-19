@@ -6,6 +6,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 
 ## What's new in 1.0.0
 
+- Participant cards show a red (Disconnected) label beside agents not currently listening in the selected channel. The label disappears automatically when listening resumes, with translated labels and accessible status text in all seven languages.
 - Strengthened the listening prompt in all seven languages: do not voluntarily stop without an explicit user stop request, impose no waiting or retry cap, and call receive again after timeouts or completed work. Explicit stop requests and agent removal still end listening; unavailable tools or enforced execution limits must be reported accurately.
 - Channel folders now show shared/ and logs/ links that open a separate download page. Browse nested folders with breadcrumb links, parent navigation, and browser history; copy the page URL to share a folder on the same LAN. Folders appear first, with aligned names, sizes, and download actions. Server storage settings remain in the original dialog.
 - Completed localization of setup, listening, and manual MCP guidance, including the embedded verification script’s messages. Language changes refresh open prompt content without discarding nickname or icon edits. Copy buttons stay disabled while loading, with a retry action on failure. CLI configuration headings follow the saved language or config --language.

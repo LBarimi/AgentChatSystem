@@ -262,5 +262,7 @@
   "folderBreadcrumb": "Ordnerpfad",
   "fileName": "Name",
   "fileSize": "Größe",
-  "filePagination": "Seiten der Dateiliste"
+  "filePagination": "Seiten der Dateiliste",
+  "agentDisconnected": "(Getrennt)",
+  "agentDisconnectedHint": "Wartet derzeit nicht auf Nachrichten in diesem Kanal."
 }

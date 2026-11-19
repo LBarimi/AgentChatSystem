@@ -262,5 +262,7 @@
   "folderBreadcrumb": "폴더 경로",
   "fileName": "이름",
   "fileSize": "크기",
-  "filePagination": "파일 목록 페이지"
+  "filePagination": "파일 목록 페이지",
+  "agentDisconnected": "(연결 끊김)",
+  "agentDisconnectedHint": "현재 채널에서 수신 대기 중이 아닙니다."
 }

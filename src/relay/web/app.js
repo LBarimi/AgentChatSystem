@@ -210,11 +210,20 @@ function showParticipants() {
       const label = online ? t("listening") : t("idle");
       status.append(element("i"), label + (agent.pending ? " · " + t("agentPending", { count: agent.pending }) : ""));
       const details = element("span", "agent-details");
-      details.append(element("strong", "", agent.name), status);
+      const nameLine = element("span", "agent-name-line");
+      const name = element("strong", "", agent.name);
+      name.title = agent.name;
+      nameLine.append(name);
+      if (!online) {
+        const disconnected = element("span", "agent-disconnected", t("agentDisconnected"));
+        disconnected.title = t("agentDisconnectedHint");
+        nameLine.append(disconnected);
+      }
+      details.append(nameLine, status);
       const button = element("button", "agent-card");
       button.type = "button";
       button.dataset.agent = agent.id;
-      button.setAttribute("aria-label", t("agentSetup", { name: agent.name }));
+      button.setAttribute("aria-label", t("agentSetup", { name: agent.name }) + (online ? "" : " " + t("agentDisconnected")));
       button.append(participantAvatar(agent), details, icon("chevron-right"));
       if (role === "codex") button.append(modelSettings(agent));
       section.append(button);

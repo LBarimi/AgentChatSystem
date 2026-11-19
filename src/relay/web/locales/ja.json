@@ -262,5 +262,7 @@
   "folderBreadcrumb": "フォルダーのパス",
   "fileName": "名前",
   "fileSize": "サイズ",
-  "filePagination": "ファイル一覧のページ"
+  "filePagination": "ファイル一覧のページ",
+  "agentDisconnected": "(接続切れ)",
+  "agentDisconnectedHint": "現在このチャンネルでメッセージの受信を待機していません。"
 }

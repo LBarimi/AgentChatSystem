@@ -262,5 +262,7 @@
   "folderBreadcrumb": "Путь к папке",
   "fileName": "Имя",
   "fileSize": "Размер",
-  "filePagination": "Страницы списка файлов"
+  "filePagination": "Страницы списка файлов",
+  "agentDisconnected": "(Нет связи)",
+  "agentDisconnectedHint": "Сейчас не ожидает сообщения в этом канале."
 }

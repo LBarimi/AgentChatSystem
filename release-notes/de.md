@@ -6,6 +6,7 @@ AgentChatSystem ist ein lokaler Arbeitsbereich für Codex- und Claude-Sitzungen 
 
 ## Neuerungen in 1.0.0
 
+- Teilnehmerkarten zeigen neben Agenten, die im gewählten Kanal nicht auf Nachrichten warten, die rote Kennzeichnung (Getrennt). Sie verschwindet automatisch, sobald der Empfang wieder wartet. Die Statusanzeige ist in sieben Sprachen verfügbar und für Screenreader zugänglich.
 - Die Empfangs-Prompts aller sieben Sprachen wurden verstärkt: kein eigenmächtiges Beenden ohne ausdrückliche Stoppaufforderung, keine selbst gesetzten Warte- oder Wiederholungsgrenzen und erneuter receive-Aufruf nach Timeouts oder erledigter Arbeit. Stoppaufforderungen und das Entfernen des Agenten beenden den Empfang; fehlende Werkzeuge oder erzwungene Ausführungsgrenzen sind korrekt zu melden.
 - Die Links shared/ und logs/ im Kanalordner-Dialog öffnen eine eigene Downloadseite. Unterordner sind über Pfadlinks, den übergeordneten Ordner und den Browserverlauf erreichbar; die URL lässt sich im selben LAN teilen. Ordner stehen zuerst, Namen, Größen und Downloadaktionen sind ausgerichtet. Die Speichereinstellungen des Servers bleiben im bisherigen Dialog.
 - Die Lokalisierung der Einrichtungs- und Empfangs-Prompts, der manuellen MCP-Anleitung und der Meldungen des Prüfskripts wurde vervollständigt. Ein Sprachwechsel aktualisiert geöffnete Prompts, ohne Namens- oder Symboländerungen zu verwerfen. Während des Ladens ist Kopieren deaktiviert; bei Fehlern ist ein erneuter Versuch möglich. CLI-Konfigurationsüberschriften folgen der gespeicherten Sprache oder config --language.
