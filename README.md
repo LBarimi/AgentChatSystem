@@ -24,9 +24,9 @@ AgentChatSystem is a **web-based collaboration workspace** for Codex and Claude 
 
 | Feature | In the workspace |
 | --- | --- |
-| **Coordinate a CLI team** | Create a Codex parent, add Codex and Claude children, and send tasks from chat. Each card shows its latest reported token usage. |
+| **Coordinate a CLI team** | Create a Codex manager, add Codex and Claude agents, and send tasks from chat. Cards show the reported account usage percentage. |
 | **Keep channels separate** | Each channel has its own participants, connected users, messages, board, and files. MCP operations follow the agent's channel. |
-| **See outstanding work** | A spinning circle beside a channel name marks tasks awaiting replies, including work in channels you are not viewing. |
+| **See outstanding work** | A spinning circle beside a channel name shows when a CLI session is starting, working, or has unanswered tasks. |
 | **Share lasting instructions** | Publish board posts and see which agents have read them. New participants receive existing instructions in their channel. |
 | **Exchange files** | Attach files to chat or board posts, or browse channel folders through a dedicated download page. |
 | **Make it yours** | Resize side panels, choose participant icons, and use six themes plus System in seven languages. |
@@ -56,7 +56,7 @@ Python must be available as `python` on Windows or `python3` on Linux and macOS.
 3. Wait for **Agent created and ready** in chat. The manager's nickname appears in blue. Choose **Create Codex** or **Create Claude** at the bottom of the manager's card and fill in the same fields.
 4. Send a task to the parent. It can hand a task to one of its children, receive the result in the same conversation, and answer in the channel. You can also address a child directly. **Everyone** delivers to ready parents and existing manual MCP participants. Children receive delegated or directly addressed tasks.
 
-ACS opens a CLI session when you create a card, then resumes that session for each message. The CLI process exits between messages. The card displays cumulative session tokens and shows the most recent turn's input and output in a tooltip. These counts update when a CLI turn reports usage. Provider account quotas are separate.
+ACS opens a CLI session when you create a card, then resumes that session for each message. Cards show the highest percentage used among the provider's reported account limit windows. The percentage updates after CLI replies and stays unknown when the provider does not report it. Claude cards show the model version reported by the catalog or the last turn.
 
 Removing a card stops its running CLI and removes the saved session link from ACS. Removing a parent also removes its children. Removing a channel stops all managed agents in that channel. The provider's local conversation history and the reference folder stay on disk.
 
@@ -106,9 +106,11 @@ These screenshots show the manual MCP workspace with **seeded example data** in 
 
 ### Everyday workflow
 
+- **Message actions:** Open **⋮** to delete an individual message. Any message can be deleted on the server PC. On the LAN, people can delete their own messages.
+- **Reactions:** Click **+** under a message to choose ✅, 👍, ❤️, ❓, or 👀. Click an applied reaction to remove it.
 - **Recipients:** Everyone is the default. Your manual choice is remembered separately for each channel; a removed target stays unavailable until you choose another.
 - **Handoffs:** An agent can reply once to a received message and use `next_agent` to pass work to a participant in the same channel.
-- **Activity:** The channel circle reflects unanswered tasks. It clears when replies finish and becomes a static ring when reduced motion is enabled.
+- **Activity:** The channel circle marks agent startup and tasks awaiting replies. It becomes a static ring when reduced motion is enabled.
 - **Participants:** Cards show listening status, provider icons, and custom icons. Codex cards show the linked session's detected model and reasoning effort, or **Unknown** when unavailable. **(Disconnected)** means the agent is not currently inside a receive call, including while it works.
 - **People:** Connected users appear by computer name, with IP as a fallback. Your own name and messages are yellow. Each browser tab belongs to its selected channel.
 - **Channel controls:** Drag a panel edge to resize it. Use **⋮** to rename or delete any channel, including General. **Enter** sends; **Shift+Enter** adds a line.

@@ -87,7 +87,7 @@ def command(program, agent, schema=None):
         if session:
             args.append(session)
         return args + ['-']
-    args = [program, '--print', '--output-format', 'json', '--permission-mode', 'default']
+    args = [program, '--print', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'default']
     if agent['effort']:
         args += ['--effort', agent['effort']]
     if model:
@@ -99,8 +99,10 @@ def command(program, agent, schema=None):
 
 def result(role, output):
     try:
+        model = ''
+        quota = None
         if role == 'codex':
-            session = body = usage = None
+            session = body = None
             completed = False
             for line in output.splitlines():
                 if not line.strip():
@@ -111,35 +113,54 @@ def result(role, output):
                 elif event['type'] == 'item.completed' and event['item']['type'] == 'agent_message':
                     body = event['item']['text']
                 elif event['type'] == 'turn.completed':
-                    completed, usage = True, event.get('usage')
+                    completed = True
             if not completed:
                 raise ValueError
         else:
-            event = json.loads(output)
-            if event.get('type') != 'result' or event.get('is_error'):
+            last = None
+            for line in output.splitlines():
+                if not line.strip():
+                    continue
+                event = json.loads(line)
+                kind = event.get('type')
+                if kind == 'system' and event.get('subtype') == 'init':
+                    model = event.get('model') or model
+                elif kind == 'assistant':
+                    model = event.get('message', {}).get('model') or model
+                elif kind == 'rate_limit_event':
+                    quota = claude_quota(event.get('rate_limit_info')) or quota
+                elif kind == 'result':
+                    last = event
+            if not last or last.get('is_error'):
                 raise ValueError
-            session, body, usage = event['session_id'], event['result'], event.get('usage')
+            session, body = last['session_id'], last['result']
         if not isinstance(body, str) or not body.strip():
             raise ValueError
-        return str(UUID(session)), body.strip(), tokens(role, usage)
+        return str(UUID(session)), body.strip(), model if isinstance(model, str) else '', quota
     except (ValueError, TypeError, KeyError, AttributeError) as error:
         raise CliError('Unsuccessful or invalid CLI response', output=output) from error
 
 
-def tokens(role, usage):
-    if not isinstance(usage, dict):
+def quota_window(percent, resets_at):
+    if type(percent) not in (int, float) or not 0 <= percent <= 100:
         return None
-    counts = {}
-    for key in ('input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'):
-        value = usage.get(key)
-        if type(value) is int and 0 <= value < 10**12:
-            counts[key] = value
-    if 'input_tokens' not in counts or 'output_tokens' not in counts:
+    return {'percent': percent, 'resets_at': resets_at if type(resets_at) is int and resets_at > 0 else None}
+
+
+def claude_quota(info):
+    if not isinstance(info, dict):
         return None
-    input_tokens = counts['input_tokens']
-    if role == 'claude':
-        input_tokens += counts.get('cache_creation_input_tokens', 0) + counts.get('cache_read_input_tokens', 0)
-    return {'input': input_tokens, 'output': counts['output_tokens']}
+    windows = info.get('unifiedWindows')
+    values = [value for key, value in windows.items() if key in ('five_hour', 'seven_day')] if isinstance(windows, dict) else []
+    values.append(info)
+    candidates = []
+    for window in values:
+        if not isinstance(window, dict):
+            continue
+        utilization = window.get('utilization')
+        if type(utilization) in (int, float) and 0 <= utilization <= 1:
+            candidates.append(quota_window(utilization * 100, window.get('resetsAt')))
+    return max(candidates, key=lambda item: item['percent'], default=None)
 
 
 class Turn:

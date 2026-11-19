@@ -6,10 +6,11 @@ from pathlib import Path
 import subprocess
 from tempfile import TemporaryDirectory
 from threading import Thread
+from time import time
 
 from relay.errors import ApiError
 from relay import managed_cli
-from relay.managed_options import ROLES, ModelOptions, folder_path
+from relay.managed_options import ROLES, ModelOptions, claude_model_label, codex_quota, folder_path
 from relay.settings import PROJECT
 
 
@@ -48,6 +49,7 @@ class ManagedAgents:
                 parent_id TEXT REFERENCES managed_agents(id),
                 cwd TEXT NOT NULL,
                 model TEXT NOT NULL,
+                model_label TEXT NOT NULL DEFAULT '',
                 effort TEXT NOT NULL,
                 language TEXT NOT NULL,
                 session TEXT,
@@ -57,6 +59,8 @@ class ManagedAgents:
             );
             CREATE INDEX IF NOT EXISTS managed_parent ON managed_agents(parent_id);
         """)
+        if 'model_label' not in {row['name'] for row in self.db.execute('PRAGMA table_info(managed_agents)')}:
+            self.db.execute("ALTER TABLE managed_agents ADD COLUMN model_label TEXT NOT NULL DEFAULT ''")
         columns = {row['name'] for row in self.db.execute('PRAGMA table_info(participants)')}
         if 'is_manager' not in columns:
             with self.db:
@@ -149,7 +153,10 @@ class ManagedAgents:
         model = payload.get('model', '')
         effort = payload.get('effort', '')
         managed_cli.require_executable(role)
-        self.options.validate(role, model, effort)
+        choice = self.options.validate(role, model, effort)
+        if role == 'claude' and not choice:
+            choice = next((item for item in self.options.get(role)['models'] if item['default_model']), None)
+        model_label = choice['name'] if role == 'claude' and choice else ''
         with self.room.changed:
             if self.closed:
                 raise ApiError('ACS is stopping.', 503, key='errorUnavailable')
@@ -161,8 +168,8 @@ class ManagedAgents:
             with self.db:
                 agent = self.room._register(payload)
                 self.db.execute("""
-                    INSERT INTO managed_agents(id,parent_id,cwd,model,effort,language) VALUES (?,?,?,?,?,?)
-                """, (agent['id'], parent_id, str(cwd), model, effort, language))
+                    INSERT INTO managed_agents(id,parent_id,cwd,model,model_label,effort,language) VALUES (?,?,?,?,?,?,?)
+                """, (agent['id'], parent_id, str(cwd), model, model_label, effort, language))
                 if parent_id is None:
                     self.db.execute('UPDATE participants SET is_manager=1 WHERE id=?', (agent['id'],))
             self.room._notify_board()
@@ -190,11 +197,16 @@ class ManagedAgents:
             status = 'starting'
         elif row['active_message'] is not None:
             status = 'busy'
+        quota_row = self.db.execute('SELECT value FROM workspace_state WHERE key=?',
+                                    ('cli_quota_' + row['role'],)).fetchone()
+        quota = json.loads(quota_row['value']) if quota_row else None
+        if quota and quota['resets_at'] and quota['resets_at'] <= time():
+            quota = None
         result = {
             'managed': True, 'parent_id': row['parent_id'], 'state': status,
             'resumable': bool(row['session']),
-            'error': row['error'], 'usage': json.loads(row['usage']) if row['usage'] else None,
-            'model_settings': {'model': row['model'], 'reasoning_effort': row['effort']},
+            'error': row['error'], 'usage': quota,
+            'model_settings': {'model': row['model_label'] or row['model'], 'reasoning_effort': row['effort']},
             'waiting': status == 'ready',
         }
         if local:
@@ -216,6 +228,12 @@ class ManagedAgents:
         """, (channel_id,)):
             turn = self.processes.get(row['id'])
             if turn and self.get(row['id'])['active_message'] is not None:
+                turn.stop()
+
+    def cancel_message(self, message_id):
+        for row in self.db.execute('SELECT id FROM managed_agents WHERE active_message=?', (message_id,)):
+            turn = self.processes.get(row['id'])
+            if turn:
                 turn.stop()
 
     def close(self):
@@ -328,7 +346,7 @@ class ManagedAgents:
                 turn = managed_cli.Turn(managed_cli.command(program, agent, schema), agent['cwd'])
                 self.processes[agent_id] = turn
             output = turn.read(prompt, timeout=900 if message else 120)
-            session, body, usage = managed_cli.result(agent['role'], output)
+            session, body, model, quota = managed_cli.result(agent['role'], output)
             if agent['session'] and session != agent['session']:
                 raise managed_cli.CliError('CLI resumed a different session')
             target = agent['parent_id'] if message and message['sender'] == agent['parent_id'] else None
@@ -339,7 +357,10 @@ class ManagedAgents:
                 if not isinstance(body, str) or not body.strip() or (child is not None and (not isinstance(child, str) or child not in children)):
                     raise managed_cli.CliError('Invalid delegation')
                 target = child
-            response = (session, body.strip()[:10000].encode('utf-8', 'replace').decode(), usage, target)
+            if agent['role'] == 'codex':
+                quota = codex_quota(program, PROJECT)
+            model_label = claude_model_label(model) if model else ''
+            response = (session, body.strip()[:10000].encode('utf-8', 'replace').decode(), model_label, quota, target)
         except managed_cli.CliError as error:
             if message is None and managed_cli.authentication_required(agent['role'], error):
                 failure = 'managedAuthRequired'
@@ -366,12 +387,12 @@ class ManagedAgents:
         published = None
         with self.db:
             if response:
-                session, body, usage, target = response
-                if usage:
-                    previous = json.loads(agent['usage']) if agent['usage'] else {}
-                    usage['total'] = previous.get('total', 0) + usage['input'] + usage['output']
-                self.db.execute('UPDATE managed_agents SET session=?,usage=COALESCE(?,usage) WHERE id=?',
-                                (session, json.dumps(usage) if usage else None, aid))
+                session, body, model_label, quota, target = response
+                if quota is not None:
+                    self.db.execute('INSERT OR REPLACE INTO workspace_state(key,value) VALUES (?,?)',
+                                    ('cli_quota_' + agent['role'], json.dumps(quota)))
+                self.db.execute("UPDATE managed_agents SET session=?,model_label=COALESCE(NULLIF(?,''),model_label) WHERE id=?",
+                                (session, model_label, aid))
             else:
                 target = agent['parent_id'] if original and original['sender'] == agent['parent_id'] else None
                 body = labels[failure] if failure else ''

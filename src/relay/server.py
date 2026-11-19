@@ -45,6 +45,7 @@ PENDING_MESSAGES = """
     WHERE NOT EXISTS(SELECT 1 FROM messages r WHERE r.reply_to=m.id AND r.sender=d.agent_id)
 """
 MESSAGE_FIELDS = 'm.id, m.channel_id, m.sender, m.recipient, m.body, m.reply_to, m.created_at, m.user_ip, m.user_name'
+REACTIONS = ('check', 'like', 'heart', 'question', 'reviewing')
 
 
 class RequestError(ApiError):
@@ -105,6 +106,12 @@ class Room:
                 PRIMARY KEY (message_id, agent_id)
             );
             CREATE INDEX IF NOT EXISTS delivery_inbox ON deliveries(agent_id, message_id);
+            CREATE TABLE IF NOT EXISTS message_reactions (
+                message_id INTEGER NOT NULL REFERENCES messages(id),
+                viewer_ip TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                PRIMARY KEY (message_id, viewer_ip, kind)
+            );
             CREATE TABLE IF NOT EXISTS participant_icons (
                 agent_id TEXT PRIMARY KEY REFERENCES participants(id),
                 mime_type TEXT NOT NULL,
@@ -316,7 +323,11 @@ class Room:
                 AND EXISTS (SELECT 1 FROM participants p WHERE p.id=d.agent_id
                             AND p.channel_id=m.channel_id AND p.removed_at IS NULL)
                 GROUP BY m.channel_id'''))
-            return [self.storage.describe(row) | {'pending': pending.get(row['id'], 0)}
+            working = {row['channel_id'] for row in self.db.execute("""
+                SELECT DISTINCT p.channel_id FROM managed_agents a JOIN participants p ON p.id=a.id
+                WHERE p.removed_at IS NULL AND (a.active_message IS NOT NULL OR (a.session IS NULL AND a.error IS NULL))
+            """)}
+            return [self.storage.describe(row) | {'pending': pending.get(row['id'], 0), 'working': row['id'] in working}
                     for row in self.db.execute('SELECT * FROM channels ORDER BY rowid')]
 
     def create_channel(self, payload):
@@ -347,6 +358,7 @@ class Room:
                 return {'channel_id': channel_id, 'cleared': count}
 
     def _delete_channel_messages(self, channel_id):
+        self.db.execute('DELETE FROM message_reactions WHERE message_id IN (SELECT id FROM messages WHERE channel_id=?)', (channel_id,))
         self.db.execute('DELETE FROM chat_attachments WHERE message_id IN (SELECT id FROM messages WHERE channel_id=?)', (channel_id,))
         self.db.execute('DELETE FROM deliveries WHERE message_id IN (SELECT id FROM messages WHERE channel_id=?)', (channel_id,))
         return self.db.execute('DELETE FROM messages WHERE channel_id=?', (channel_id,)).rowcount
@@ -657,8 +669,77 @@ class Room:
                 "viewer": self.users.identity(viewer_address),
                 "archived_participants": self._archived_participants(rows),
                 "total_messages": self.db.execute('SELECT COUNT(*) FROM messages WHERE channel_id=?', (channel_id,)).fetchone()[0],
-                "messages": self.chat_files.attach_metadata(reversed(rows)),
+                "messages": self._chat_snapshot(rows, viewer_address, managed_local),
             }
+
+    @staticmethod
+    def _can_delete_message(message, viewer_address, managed_local):
+        return managed_local or bool(viewer_address and message['sender'] == 'user' and message['user_ip'] == viewer_address)
+
+    def _chat_snapshot(self, rows, viewer_address, managed_local):
+        visible = self.chat_files.attach_metadata(reversed(rows))
+        if not visible or viewer_address is None:
+            return visible
+        by_id = {message['id']: message for message in visible}
+        for message in visible:
+            message['can_delete'] = self._can_delete_message(message, viewer_address, managed_local)
+            message['reactions'] = []
+        placeholders = ','.join('?' for _ in by_id)
+        for reaction in self.db.execute(f"""
+            SELECT message_id,kind,COUNT(*) AS count,MAX(CASE WHEN viewer_ip=? THEN 1 ELSE 0 END) AS mine
+            FROM message_reactions WHERE message_id IN ({placeholders}) GROUP BY message_id,kind
+        """, (viewer_address, *by_id)):
+            by_id[reaction['message_id']]['reactions'].append({
+                'kind': reaction['kind'], 'count': reaction['count'], 'mine': bool(reaction['mine']),
+            })
+        return visible
+
+    def _chat_message(self, payload):
+        message_id = payload.get('message_id')
+        if type(message_id) is not int or not 1 <= message_id <= 2**63 - 1:
+            raise RequestError('메시지를 찾을 수 없습니다.', 404, key='errorChatMessageMissing')
+        channel_id = self._channel(payload.get('channel_id'))['id']
+        message = self.db.execute('SELECT * FROM messages WHERE id=? AND channel_id=?', (message_id, channel_id)).fetchone()
+        if message is None:
+            raise RequestError('메시지를 찾을 수 없습니다.', 404, key='errorChatMessageMissing')
+        return message
+
+    def delete_message(self, payload, viewer_address):
+        with self.changed:
+            message = self._chat_message(payload)
+            if not self._can_delete_message(message, viewer_address, loopback(viewer_address)):
+                raise RequestError('이 메시지를 삭제할 수 없습니다.', 403, key='errorChatMessageDelete')
+            message_id = message['id']
+            with self.db:
+                self.managed.cancel_message(message_id)
+                if message['reply_to']:
+                    # Deleting a reply must not put its already answered task back in the inbox.
+                    self.db.execute('DELETE FROM deliveries WHERE message_id=? AND agent_id=?',
+                                    (message['reply_to'], message['sender']))
+                self.db.execute('UPDATE messages SET reply_to=NULL WHERE reply_to=?', (message_id,))
+                self.db.execute('DELETE FROM message_reactions WHERE message_id=?', (message_id,))
+                self.db.execute('DELETE FROM chat_attachments WHERE message_id=?', (message_id,))
+                self.db.execute('DELETE FROM deliveries WHERE message_id=?', (message_id,))
+                self.db.execute('DELETE FROM messages WHERE id=?', (message_id,))
+            self._write_log(message['channel_id'])
+            self._notify()
+            return {'deleted': True}
+
+    def set_message_reaction(self, payload, viewer_address):
+        kind, selected = payload.get('kind'), payload.get('selected')
+        if kind not in REACTIONS or type(selected) is not bool or not viewer_address:
+            raise RequestError('지원하는 메시지 반응을 선택하세요.', key='errorChatReaction')
+        with self.changed:
+            message = self._chat_message(payload)
+            args = (message['id'], viewer_address, kind)
+            with self.db:
+                if selected:
+                    change = self.db.execute('INSERT OR IGNORE INTO message_reactions VALUES (?,?,?)', args)
+                else:
+                    change = self.db.execute('DELETE FROM message_reactions WHERE message_id=? AND viewer_ip=? AND kind=?', args)
+            if change.rowcount:
+                self._notify()
+            return {'selected': selected}
 
     def _insert(self, channel_id, sender, recipient, body, reply_to=None, *, files=(), request_id=None, user=None,
                 deliver_managed=False):
@@ -1162,6 +1243,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({'discarded': True})
             elif self.path == "/api/messages":
                 self._json(self.room.post(payload, user_address=self.client_address[0]))
+            elif self.path == '/api/messages/delete':
+                self._json(self.room.delete_message(payload, self.client_address[0]))
+            elif self.path == '/api/messages/reaction':
+                self._json(self.room.set_message_reaction(payload, self.client_address[0]))
             elif self.path == '/api/participants/connected':
                 self._json(self.room.announce_connection(payload))
             elif self.path == '/api/settings/language':

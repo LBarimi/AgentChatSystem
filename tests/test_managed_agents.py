@@ -31,8 +31,13 @@ class FakeTurn:
             self.stopped.wait(5)
             raise managed_cli.CliError('turn stopped')
         if '--print' in self.args:
-            return json.dumps({'type': 'result', 'session_id': self.session, 'result': 'Child finding',
-                               'usage': {'input_tokens': 2, 'cache_read_input_tokens': 3, 'output_tokens': 1}})
+            return '\n'.join(json.dumps(event) for event in (
+                {'type': 'system', 'subtype': 'init', 'model': 'claude-opus-5-5'},
+                {'type': 'rate_limit_event', 'rate_limit_info': {
+                    'unifiedWindows': {'five_hour': {'utilization': 0.12}, 'seven_day': {'utilization': 0.42}},
+                }},
+                {'type': 'result', 'session_id': self.session, 'result': 'Child finding'},
+            ))
         body = 'Ready'
         if '--output-schema' in self.args:
             if 'delegate this' in prompt:
@@ -64,6 +69,7 @@ class ManagedAgentsTest(unittest.TestCase):
         self.addCleanup(patch.stopall)
         patch.object(managed_cli, 'executable', side_effect=lambda role: role).start()
         patch.object(managed_cli, 'Turn', FakeTurn).start()
+        patch('relay.managed_agents.codex_quota', return_value={'percent': 24, 'resets_at': None}).start()
         self.channel = self.room.create_channel({'name': 'Team'})['id']
 
     def create(self, role, name, parent=None, channel=None):
@@ -88,16 +94,20 @@ class ManagedAgentsTest(unittest.TestCase):
                               user_address=address)['message']
 
     def test_creates_resumes_delegates_and_updates_usage_at_turn_completion(self):
-        parent = self.create('codex', 'Coordinator')
+        with self.room.changed:
+            parent = self.create('codex', 'Coordinator')
+            self.assertTrue(next(channel for channel in self.room.channels() if channel['id'] == self.channel)['working'])
         self.ready(parent)
-        self.assertEqual(self.room.participants(self.channel)[0]['usage']['total'], 14)
+        self.assertEqual(self.room.participants(self.channel)[0]['usage']['percent'], 24)
         child = self.create('claude', 'Reviewer', parent)
         self.ready(child)
         self.task('delegate this')
         self.until(lambda: self.room.snapshot(self.channel)['messages'][-1]['body'] == 'Parent summary')
         snapshot = self.room.snapshot(self.channel, viewer_address='127.0.0.1')
         self.assertEqual([m['sender'] for m in snapshot['messages']], [parent, child, 'user', parent, child, parent])
-        self.assertEqual([p['usage']['total'] for p in snapshot['participants']], [42, 12])
+        self.assertEqual([p['usage']['percent'] for p in snapshot['participants']], [24, 42])
+        self.assertEqual(snapshot['participants'][1]['model_settings']['model'], 'Opus 5.5')
+        self.assertFalse(next(channel for channel in snapshot['channels'] if channel['id'] == self.channel)['working'])
         self.assertEqual(snapshot['participants'][1]['parent_id'], parent)
         self.assertEqual([item['is_manager'] for item in snapshot['participants']], [1, 0])
         self.assertNotIn('cwd', self.room.snapshot(self.channel, viewer_address='192.168.1.10')['participants'][0])

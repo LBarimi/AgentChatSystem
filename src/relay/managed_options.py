@@ -112,13 +112,31 @@ def metadata_session(args, cwd):
         turn.reap()
 
 
-def codex_models(program, cwd):
+@contextmanager
+def codex_session(program, cwd):
     with metadata_session([program, 'app-server', '--listen', 'stdio://'], cwd) as (send, receive):
         send({'id': 1, 'method': 'initialize', 'params': {'clientInfo': {
             'name': 'agentchatsystem', 'title': 'AgentChatSystem', 'version': '1.0.0',
         }}})
         receive(lambda event: event.get('id') == 1)['result']
         send({'method': 'initialized'})
+        yield send, receive
+
+
+def codex_quota(program, cwd):
+    try:
+        with codex_session(program, cwd) as (send, receive):
+            send({'id': 2, 'method': 'account/rateLimits/read'})
+            rates = receive(lambda event: event.get('id') == 2)['result']['rateLimits']
+        windows = [managed_cli.quota_window(period.get('usedPercent'), period.get('resetsAt'))
+                   for period in (rates.get('primary'), rates.get('secondary')) if isinstance(period, dict)]
+        return max((window for window in windows if window), key=lambda item: item['percent'], default=None)
+    except (OSError, KeyError, ValueError, TypeError, AttributeError, Empty, managed_cli.CliError):
+        return None
+
+
+def codex_models(program, cwd):
+    with codex_session(program, cwd) as (send, receive):
         cursor = None
         for request_id in range(2, 22):
             send({'id': request_id, 'method': 'model/list', 'params': {
@@ -143,6 +161,14 @@ def codex_models(program, cwd):
         raise managed_cli.CliError('Model pagination did not complete')
 
 
+def claude_model_label(model):
+    match = re.fullmatch(r'claude-([a-z]+)-(\d+(?:-\d{1,2})*)(?:-\d{8})?(?:\[1m\])?', model)
+    if not match:
+        return model
+    family, version = match.groups()
+    return f'{family.title()} {version.replace("-", ".")}' + (' (1M)' if model.endswith('[1m]') else '')
+
+
 def claude_models(program, cwd):
     # Same initialize exchange as the Claude Agent SDK. No user turn is sent.
     packet = {'type': 'control_request', 'request_id': 'acs-picker', 'request': {'subtype': 'initialize'}}
@@ -159,13 +185,8 @@ def claude_models(program, cwd):
         for model in response['response']['models']:
             name = model.get('displayName', model['value'])
             resolved = model.get('resolvedModel') or model['value']
-            match = re.fullmatch(r'claude-([a-z]+)-(\d+(?:-\d+)*)(?:\[1m\])?', resolved)
-            if match:
-                family, version = match.groups()
-                concrete_name = f'{family.title()} {version.replace("-", ".")}'
-                if resolved.endswith('[1m]'):
-                    concrete_name += ' (1M)'
-                name = concrete_name
+            if resolved.startswith('claude-'):
+                name = claude_model_label(resolved)
             yield {
                 'id': '' if model['value'] == 'default' else model['value'],
                 'name': name,
@@ -227,3 +248,4 @@ class ModelOptions:
             raise ApiError('Choose a model from the CLI list.', key='managedModelInvalid')
         if effort and effort not in option['efforts']:
             raise ApiError('Choose a supported reasoning level.', key='managedEffortInvalid')
+        return option

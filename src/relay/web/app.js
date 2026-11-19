@@ -109,16 +109,14 @@ function modelSettings(agent) {
   const fields = element("span", "agent-model-info");
   if (!agent.managed) fields.title = t("modelSettingsHint");
   const rows = [
-    [t("model"), settings.model || t(agent.managed ? "managedModelDefault" : "modelUnknown")],
+    [t("model"), settings.model || t(agent.managed && agent.role !== "claude" ? "managedModelDefault" : "modelUnknown")],
     [t("reasoningEffort"), effort ? effortLabel(effort) : t(agent.managed ? "managedModelDefault" : "modelUnknown")],
   ];
   if (agent.managed) {
-    const format = new Intl.NumberFormat(document.documentElement.lang);
-    const usage = agent.usage;
-    rows.push([t("managedUsage"), usage ? t("managedTokenCount", {
-      count: format.format(usage.total),
-    }) : t("modelUnknown")]);
-    if (usage) fields.title = t("managedLastTurn", { input: format.format(usage.input), output: format.format(usage.output) });
+    const format = new Intl.NumberFormat(document.documentElement.lang, { style: "percent", maximumFractionDigits: 1 });
+    const percent = agent.usage?.percent;
+    rows.push([t("managedUsage"), Number.isFinite(percent) ? format.format(percent / 100) : t("modelUnknown")]);
+    fields.title = t("managedUsageHint");
   }
   for (const [label, value] of rows) {
     const field = element("span", "agent-field");
@@ -185,9 +183,9 @@ function showChannels() {
     button.dataset.channel = channel.id;
     if (channel.id === activeChannel) button.setAttribute("aria-current", "page");
     button.append(icon("hash"), element("span", "channel-name", channelName(channel)));
-    if (channel.pending > 0) {
+    if (channel.pending > 0 || channel.working) {
       const activity = element("span", "channel-activity");
-      const status = t("channelWorking", { count: channel.pending });
+      const status = channel.pending > 0 ? t("channelWorking", { count: channel.pending }) : t("channelAgentWorking");
       activity.title = status;
       activity.setAttribute("aria-hidden", "true");
       button.setAttribute("aria-label", channelName(channel) + " · " + status);
@@ -392,13 +390,60 @@ function messageAttachments(attachments) {
   return list;
 }
 
-function row(message, participants) {
+const chatReactions = {
+  check: ["✅", "chatReactionCheck"],
+  like: ["👍", "chatReactionLike"],
+  heart: ["❤️", "chatReactionHeart"],
+  question: ["❓", "chatReactionQuestion"],
+  reviewing: ["👀", "chatReactionReviewing"],
+};
+
+function messageMenu(message, action, label, glyph, openMenus) {
+  const menu = element("details", "message-" + action);
+  menu.dataset.menuKey = message.id + ":" + action;
+  menu.open = openMenus.has(menu.dataset.menuKey);
+  const summary = element("summary", "message-menu-trigger", glyph);
+  summary.title = label;
+  summary.setAttribute("aria-label", label);
+  menu.append(summary);
+  return menu;
+}
+
+function reactionButton(kind, currentReaction, showCount) {
+  const [glyph, key] = chatReactions[kind];
+  const label = t(key);
+  const text = showCount ? glyph + " " + currentReaction.count : glyph;
+  const button = element("button", showCount ? "reaction-chip" : "reaction-option", text);
+  button.type = "button";
+  button.dataset.chatReaction = kind;
+  button.title = label;
+  button.setAttribute("aria-label", showCount ? label + " " + currentReaction.count : label);
+  button.setAttribute("aria-pressed", String(Boolean(currentReaction?.mine)));
+  return button;
+}
+
+function messageReactions(message, openMenus) {
+  const footer = element("div", "message-reactions");
+  const existing = new Map((message.reactions || []).map((reaction) => [reaction.kind, reaction]));
+  const choices = element("div", "reaction-options");
+  for (const kind of Object.keys(chatReactions)) {
+    if (existing.has(kind)) footer.append(reactionButton(kind, existing.get(kind), true));
+    choices.append(reactionButton(kind, existing.get(kind), false));
+  }
+  const menu = messageMenu(message, "react", t("chatAddReaction"), "+", openMenus);
+  menu.append(choices);
+  footer.append(menu);
+  return footer;
+}
+
+function row(message, participants, openMenus) {
   const sender = participants.get(message.sender);
   const user = chatUserIdentity(message, current?.viewer, current?.users || [], t);
   const to = participants.get(message.recipient);
   const item = element("li", "message");
   item.classList.toggle("is-self", user.own);
   item.id = "message-" + message.id;
+  item.dataset.messageId = message.id;
   const content = element("div");
   const meta = element("div", "message-meta");
   meta.append(element("strong", sender?.is_manager ? "manager-name" : "", sender?.name || (message.sender === "user" ? user.label : message.sender)));
@@ -416,12 +461,58 @@ function row(message, participants) {
   const stamp = element("time", "", dateFormat.format(new Date(message.created_at)));
   stamp.dateTime = message.created_at;
   meta.append(stamp);
+  if (message.can_delete) {
+    const menu = messageMenu(message, "more", t("chatMessageActions"), "⋮", openMenus);
+    const remove = element("button", "button danger message-delete", t("delete"));
+    remove.type = "button";
+    remove.dataset.deleteChatMessage = "";
+    menu.append(remove);
+    meta.append(menu);
+  }
   content.append(meta);
   if (message.body) content.append(element("p", "message-body", message.body));
   if (message.attachments?.length) content.append(messageAttachments(message.attachments));
+  content.append(messageReactions(message, openMenus));
   item.append(sender ? participantAvatar(sender) : userAvatar(user.own), content);
   return item;
 }
+
+messages.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-chat-reaction], [data-delete-chat-message]");
+  const message = button?.closest("[data-message-id]");
+  if (!message || button.disabled || !activeChannel) return;
+  const channelId = activeChannel;
+  const payload = { channel_id: channelId, message_id: Number(message.dataset.messageId) };
+  const kind = button.dataset.chatReaction;
+  button.disabled = true;
+  button.closest("details")?.removeAttribute("open");
+  showMessage("form-error", "");
+  try {
+    if (kind) {
+      await request("/api/messages/reaction", { ...payload, kind, selected: button.getAttribute("aria-pressed") !== "true" });
+    } else {
+      await request("/api/messages/delete", payload);
+    }
+    if (activeChannel === channelId) loadRoom();
+  } catch (error) {
+    if (activeChannel === channelId) showMessage("form-error", error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+document.addEventListener("pointerdown", (event) => {
+  for (const menu of messages.querySelectorAll("details[data-menu-key][open]")) {
+    if (!menu.contains(event.target)) menu.open = false;
+  }
+});
+messages.addEventListener("keydown", (event) => {
+  const menu = event.target.closest("details[data-menu-key][open]");
+  if (event.key !== "Escape" || !menu) return;
+  event.preventDefault();
+  menu.open = false;
+  menu.querySelector("summary").focus();
+});
 
 function applyRoom(snapshot, repaint = false) {
   const boardChanged = current?.board_revision !== snapshot.board_revision;
@@ -450,12 +541,13 @@ function applyRoom(snapshot, repaint = false) {
   showChannelView();
   refreshControls();
 
-  const key = snapshot.messages.map((message) => message.id).join(",");
+  const key = JSON.stringify(snapshot.messages.map(({ id, reply_to, can_delete, reactions }) => [id, reply_to, can_delete, reactions]));
   if (!repaint && !dirtyUsers && key === messageKey && lastParticipants === participantKey) return;
   const atBottom = scrollRegion.scrollHeight - scrollRegion.scrollTop - scrollRegion.clientHeight < 85;
   messageKey = key;
   const names = new Map([...snapshot.archived_participants, ...snapshot.participants].map((agent) => [agent.id, agent]));
-  messages.replaceChildren(...snapshot.messages.map((message) => row(message, names)));
+  const openMenus = new Set([...messages.querySelectorAll("details[data-menu-key][open]")].map((menu) => menu.dataset.menuKey));
+  messages.replaceChildren(...snapshot.messages.map((message) => row(message, names, openMenus)));
   el("empty").hidden = count > 0;
   showMessage("history-limit", count > snapshot.messages.length ? t("historyLimit") : "");
   if (atBottom) scrollRegion.scrollTop = scrollRegion.scrollHeight;

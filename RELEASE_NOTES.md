@@ -7,6 +7,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 ## What's new in 1.0.0
 
 - All attachment flows accept PPT files.
+- Chat messages support individual deletion and five reactions. Managed cards show reported account usage percentages and Claude model versions. The channel indicator also spins while a CLI agent is starting or working.
 - The Codex manager has a blue nickname and two agent creation buttons inside its card. On Windows, Browse opens the system folder picker. Claude options show the resolved model version.
 - Agent creation buttons show which CLI is required and stay disabled when ACS cannot find that executable.
 - Agent creation now includes a local folder picker and shows models and reasoning levels supplied by the installed CLI. The available reasoning levels change with the selected model.

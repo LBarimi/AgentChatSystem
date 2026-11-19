@@ -98,3 +98,35 @@ class UserMessages(unittest.TestCase):
         self.assertEqual(message['body'], 'Old message')
         self.assertIsNone(message['user_ip'])
         self.assertIsNone(message['user_name'])
+
+    def test_message_reactions_are_counted_per_viewer_and_reset_with_chat(self):
+        room = self.server.room
+        message = room.post({'sender': 'user', 'recipient': 'codex', 'body': 'Please review'},
+                            user_address='192.168.1.20')['message']
+        payload = {'message_id': message['id'], 'channel_id': 'general', 'kind': 'reviewing', 'selected': True}
+        for viewer in ('192.168.1.20', '192.168.1.21', '192.168.1.21'):
+            room.set_message_reaction(payload, viewer)
+        for viewer, mine in (('192.168.1.20', True), ('192.168.1.22', False)):
+            self.assertEqual(room.snapshot('general', viewer_address=viewer)['messages'][0]['reactions'],
+                             [{'kind': 'reviewing', 'count': 2, 'mine': mine}])
+        room.set_message_reaction(payload | {'selected': False}, '192.168.1.20')
+        self.assertEqual(room.snapshot('general', viewer_address='192.168.1.20')['messages'][0]['reactions'],
+                         [{'kind': 'reviewing', 'count': 1, 'mine': False}])
+        room.clear_channel('general')
+        self.assertEqual(room.db.execute('SELECT COUNT(*) FROM message_reactions').fetchone()[0], 0)
+
+    def test_delete_uses_viewer_ownership_and_does_not_requeue_answered_task(self):
+        room = self.server.room
+        owner, visitor = '192.168.1.20', '192.168.1.21'
+        first = room.post({'sender': 'user', 'recipient': 'codex', 'body': 'Original'}, user_address=owner)['message']
+        reply = room.post({'sender': 'codex', 'reply_to': first['id'], 'body': 'Finished'})['message']
+        original = {'channel_id': 'general', 'message_id': first['id']}
+        with self.assertRaises(RequestError) as forbidden:
+            room.delete_message(original, visitor)
+        self.assertEqual(forbidden.exception.status, 403)
+        with self.assertRaises(RequestError):
+            room.delete_message(original | {'channel_id': room.create_channel({'name': 'Other'})['id']}, owner)
+        self.assertTrue(room.delete_message(original | {'message_id': reply['id']}, '127.0.0.1')['deleted'])
+        self.assertEqual(room.wait_message('codex', 0)['state'], 'timeout')
+        self.assertTrue(room.delete_message(original, owner)['deleted'])
+        self.assertEqual(room.snapshot('general')['messages'], [])
