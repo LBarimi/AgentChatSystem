@@ -253,5 +253,8 @@
   "iconImageTypes": "Выберите изображение PNG, JPG или GIF.",
   "errorParticipantIcon": "Выберите значок участника.",
   "selfUser": "{name} (Вы)",
-  "chatUser": "Пользователь"
+  "chatUser": "Пользователь",
+  "promptLanguage": "Язык запросов: {language}",
+  "reloadPrompts": "Загрузить запросы заново",
+  "promptLoadFailed": "Не удалось загрузить запросы на выбранном языке."
 }

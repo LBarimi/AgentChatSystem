@@ -1,4 +1,6 @@
 import ast
+from contextlib import redirect_stdout
+from io import StringIO
 import json
 import os
 from pathlib import Path
@@ -6,6 +8,7 @@ import re
 import subprocess
 import sys
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import test_network
@@ -13,7 +16,8 @@ import test_network
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 from relay.cli import connection_setup
-from relay.prompts import setup_verification
+from relay import cli
+from relay.prompts import prompt_catalog, setup_verification
 from relay.settings import LANGUAGES
 
 
@@ -37,6 +41,12 @@ class SetupPrompts(unittest.TestCase):
                         self.assertEqual(register[register.index('--transport') + 1], 'stdio')
                     script, = re.findall(r'```python\n(.*?)```', prompt, re.S)
                     compile(script, 'generated-setup-check', 'exec')
+                    self.assertEqual(setup['language'], language)
+                    messages = next(ast.literal_eval(node.value) for node in ast.parse(script).body
+                                    if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+                                    and node.targets[0].id == 'messages')
+                    self.assertEqual(messages, prompt_catalog(language)['verification'])
+                    self.assertEqual(set(messages), set(prompt_catalog('en')['verification']))
                     self.assertNotIn('{verification}', prompt)
                     self.assertIn('http://127.0.0.1:9092/api/health', prompt)
                     self.assertTrue(setup['prompt'].startswith('[AgentChatSystem:' + role + '-2]'))
@@ -75,10 +85,85 @@ class SetupPrompts(unittest.TestCase):
         self.assertNotIn('"bridge": "verified"', result.stdout)
         self.assertIn('fixture launch failed', result.stderr)
 
+    def test_localized_probe_results_and_failures_keep_protocol_values_stable(self):
+        packets = [
+            {'id': 1, 'result': {'serverInfo': {'name': 'local-chat-codex'}}},
+            {'id': 2, 'result': {'tools': [{'name': name} for name in ('receive','reply','participants')]}},
+            {'id': 3, 'result': {'content': [{'type': 'text', 'text': '{"participants":[{"id":"codex"}]}'}]}},
+        ]
+        def result(rows=packets, code=0):
+            return SimpleNamespace(stdout='\n'.join(json.dumps(row) for row in rows), stderr='fixture error', returncode=code)
+        for language in LANGUAGES:
+            script = setup_verification(['python', 'bridge.pyz'], 'codex', language=language)
+            messages = prompt_catalog(language)['verification']
+            with self.subTest(language=language), patch('subprocess.run', return_value=result()) as run, redirect_stdout(StringIO()) as output:
+                exec(script, {})
+                reported = json.loads(output.getvalue())
+                self.assertEqual(reported['bridge'], 'verified')
+                self.assertEqual(reported['agent'], 'codex')
+                self.assertEqual(reported['message'], messages['verified'])
+                self.assertEqual(reported['client_reload_message'], messages['client_reload'])
+                self.assertFalse(run.call_args.kwargs['shell'])
+                self.assertEqual(run.call_args.kwargs['timeout'], 20)
+            wrong_server = [dict(packets[0], result={'serverInfo': {'name': 'different'}}), *packets[1:]]
+            missing_tools = [packets[0], dict(packets[1], result={'tools': []}), packets[2]]
+            missing_agent = [*packets[:2], dict(packets[2], result={'content': [{'type':'text','text':'{"participants":[]}'}]})]
+            for expected, response in [('process_failed', result(code=1)), ('verification_failed', result([])),
+                                       ('wrong_server', result(wrong_server)), ('missing_tools', result(missing_tools)),
+                                       ('missing_agent', result(missing_agent))]:
+                with self.subTest(language=language, failure=expected), patch('subprocess.run', return_value=response):
+                    with self.assertRaises(RuntimeError) as error:
+                        exec(script, {})
+                    self.assertIn(messages[expected], str(error.exception))
+                    if expected == 'verification_failed':
+                        self.assertIn(messages['missing_response'], str(error.exception))
+            for expected, cause in [('timeout', subprocess.TimeoutExpired('python', 20)), ('process_failed', OSError('launch denied'))]:
+                with self.subTest(language=language, failure=expected), patch('subprocess.run', side_effect=cause):
+                    with self.assertRaises(RuntimeError) as error:
+                        exec(script, {})
+                    self.assertIn(messages[expected], str(error.exception))
+
+    def test_cli_config_headings_follow_saved_language_and_explicit_override(self):
+        class Output(StringIO):
+            def reconfigure(self, **kwargs):
+                pass
+        for saved, explicit in [('ko', None), ('ja', 'de'), ('auto', None)]:
+            language = explicit or ('en' if saved == 'auto' else saved)
+            args = ['acs', 'config'] + (['--language', explicit] if explicit else [])
+            settings = SimpleNamespace(port=lambda:9081, language=lambda:saved)
+            with self.subTest(saved=saved, explicit=explicit), patch('relay.cli.Settings', return_value=settings), \
+                    patch.object(sys, 'argv', args), patch.object(sys, 'stdout', Output()) as output, patch.object(sys, 'stderr', Output()):
+                self.assertEqual(cli.main(), 0)
+                self.assertIn(prompt_catalog(language)['config_codex'] + ':', output.getvalue())
+                self.assertIn(prompt_catalog(language)['config_claude'] + ':', output.getvalue())
+                self.assertIn('[mcp_servers.local_chat]', output.getvalue())
+                self.assertIn('"mcpServers"', output.getvalue())
+
+    def test_unrecognized_language_falls_back_to_english_without_changing_configuration(self):
+        for role in ('codex', 'claude'):
+            english = connection_setup(9081, role, role)
+            fallback = connection_setup(9081, role, role, language='unsupported')
+            self.assertEqual(fallback, english)
+            for language in LANGUAGES:
+                self.assertEqual(connection_setup(9081, role, role, language=language)['config'], english['config'])
+
 
 class SetupConnectionCheck(unittest.TestCase):
     setUp = test_network.NetworkAccess.setUp
     stop = test_network.NetworkAccess.stop
+
+    def test_setup_api_uses_saved_language_and_explicit_request_language(self):
+        for language in LANGUAGES:
+            self.server.settings.set_language(language)
+            for role in ('codex', 'claude'):
+                saved = cli.Client(self.port).call('/api/setup?agent=' + role)
+                explicit = cli.Client(self.port).call('/api/setup?agent=' + role + '&lang=en')
+                self.assertEqual(saved['language'], language)
+                self.assertEqual(explicit['language'], 'en')
+                self.assertEqual(saved['config'], explicit['config'])
+                self.assertEqual(self.server.settings.language(), language)
+                self.assertIn(prompt_catalog(language)['verification']['verified'], saved['install_prompt'])
+                self.assertTrue(saved['prompt'].startswith('[AgentChatSystem:' + role + ']'))
 
     def check_bridge(self, agent):
         command = [sys.executable, '-B', str(ROOT / 'src'), '--port', str(self.port), 'mcp', '--agent', agent]

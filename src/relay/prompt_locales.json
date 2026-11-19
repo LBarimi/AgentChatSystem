@@ -31,7 +31,20 @@
       "실행 파일과 인자의 기준값:\n\n{launch_spec}\n\n인자는 가능한 한 subprocess.run의 리스트와 shell=False로 전달해. JSON 문자열을 셸 명령으로 이어 붙이거나 PowerShell·Bash 인용법을 섞지 마. 필요한 짧은 스크립트는 쓰기가 허용된 작업 폴더에 UTF-8 파일로 저장해 실행해. CLI 경로를 찾기 위한 정상 확인과 권한 거부 우회는 구분해.",
       "설정 저장 후 아래 읽기 전용 검사를 실행해. initialize, tools/list, participants만 호출하고 채팅·게시판에 글을 쓰거나 receive를 시작하지 않아. Python 자식 프로세스는 20초 제한이 있어. 성공 출력 없이 연결 성공으로 보고하지 마.\n\n{verification}",
       "다음 인자로 클라이언트의 실제 등록 결과도 확인해.\n\n{inspection_argv}\n\n현재 클라이언트에서 receive·reply·participants가 보이는지는 별도로 확인해. 새 설정 반영에 재연결이나 새 세션이 필요하면 기존 대화를 종료하지 말고 “설정 저장 완료 / 브리지 검사 결과 / 클라이언트 재연결 필요 여부”를 구분해 보고해. 도구 실행이 불가능하면 완료했다고 하지 말고 미완료 단계·정확한 오류·나중에 필요한 조치만 남겨. 사용자에게 응답이나 승인을 요청하며 대기하지 마."
-    ]
+    ],
+    "verification": {
+      "process_failed": "MCP 프로세스 실행 실패",
+      "verification_failed": "MCP 연결 검사 실패",
+      "missing_response": "응답이 없습니다",
+      "wrong_server": "MCP 서버 식별 정보가 일치하지 않습니다",
+      "missing_tools": "필수 MCP 도구가 없습니다",
+      "missing_agent": "이 ACS에 등록되지 않은 에이전트입니다",
+      "verified": "MCP 브리지 연결을 확인했습니다.",
+      "client_reload": "클라이언트가 MCP 도구를 다시 불러왔는지는 별도로 확인하세요.",
+      "timeout": "MCP 연결 검사가 20초 제한 시간을 초과했습니다."
+    },
+    "config_codex": "Codex config.toml 설정",
+    "config_claude": "Claude Code 사용자 MCP 설정"
   },
   "en": {
     "work_tools": "Use the assigned Relay server for messaging. For the task itself, use the tools available in this session, including image generation and editing, file operations, the terminal, web search, the browser, and other MCP servers, within the user's instructions and existing permissions. Carry out image requests with an actual image generation tool and report the reason if the tool is unavailable or the call fails.",
@@ -65,7 +78,20 @@
       "Canonical launch values:\n\n{launch_spec}\n\nPrefer an argument list with subprocess.run and shell=False. Do not concatenate JSON into shell code or mix PowerShell and Bash quoting. Save any small helper as a UTF-8 file in an already writable workspace. Normal CLI discovery is not a way to circumvent a permission denial.",
       "After saving, run this read-only check. It calls only initialize, tools/list, and participants; it does not post messages, modify the board, or start receive. The child process has a 20-second timeout. Do not claim a verified connection without its success output.\n\n{verification}",
       "Inspect the client registration with these arguments too.\n\n{inspection_argv}\n\nSeparately check whether receive, reply, and participants are visible in the current client. If reloading or a new session is needed, preserve the current conversation and report configuration saved, bridge-check result, and client reload needed separately. If tools cannot run, report the unfinished step, exact error, and later action instead of claiming completion. Do not wait for a user reply or approval."
-    ]
+    ],
+    "verification": {
+      "process_failed": "MCP process failed",
+      "verification_failed": "MCP verification failed",
+      "missing_response": "Missing response",
+      "wrong_server": "Wrong MCP server identity",
+      "missing_tools": "Required MCP tools are missing",
+      "missing_agent": "Agent is not registered in this ACS instance",
+      "verified": "MCP bridge verified.",
+      "client_reload": "Check separately whether the client has reloaded the MCP tools.",
+      "timeout": "MCP verification timed out after 20 seconds."
+    },
+    "config_codex": "Codex config.toml",
+    "config_claude": "Claude Code user MCP configuration"
   },
   "ja": {
     "work_tools": "Relay のメッセージの送受信には指定されたサーバーを使ってください。実際の作業では、ユーザーの指示と既存の権限の範囲内で、このセッションで利用できる画像の生成・編集、ファイル操作、ターミナル、ウェブ検索、ブラウザー、ほかの MCP サーバーを使えます。画像の生成は実際の生成ツールで行い、使えない場合や失敗した場合は理由を伝えてください。",
@@ -99,7 +125,20 @@
       "正確な起動値:\n\n{launch_spec}\n\nできるだけ subprocess.run の引数リストと shell=False を使用してください。JSON をシェルコードに連結せず、PowerShell と Bash の引用規則を混ぜないでください。補助スクリプトは既に書き込み可能な作業フォルダーへ UTF-8 で保存します。CLI の検索を権限拒否の迂回に使わないでください。",
       "保存後に次の読み取り専用検査を実行してください。initialize、tools/list、participants だけを呼び、投稿や receive は行いません。子プロセスの制限は 20 秒です。成功出力がなければ接続確認済みと報告しないでください。\n\n{verification}",
       "次の引数でも登録結果を確認してください。\n\n{inspection_argv}\n\n現在のクライアントで receive・reply・participants が使えるかは別に確認します。再接続や新しいセッションが必要なら、会話を終了せず「設定保存」「ブリッジ検査結果」「クライアント再読み込みの必要性」を分けて報告してください。実行できない場合は未完了工程、正確なエラー、後で必要な操作だけを残し、ユーザーの回答や承認を待たないでください。"
-    ]
+    ],
+    "verification": {
+      "process_failed": "MCPプロセスの実行に失敗しました",
+      "verification_failed": "MCP接続の検証に失敗しました",
+      "missing_response": "応答がありません",
+      "wrong_server": "MCPサーバーの識別情報が一致しません",
+      "missing_tools": "必要なMCPツールがありません",
+      "missing_agent": "このACSにエージェントが登録されていません",
+      "verified": "MCPブリッジの接続を確認しました。",
+      "client_reload": "クライアントがMCPツールを再読み込みしたかは別途確認してください。",
+      "timeout": "MCP接続の検証が20秒の制限時間を超えました。"
+    },
+    "config_codex": "Codex config.toml設定",
+    "config_claude": "Claude CodeのユーザーMCP設定"
   },
   "zh-CN": {
     "work_tools": "使用指定的 Relay 服务器收发消息。执行任务时，可以在用户指令和现有权限范围内，使用当前会话提供的图像生成与编辑、文件操作、终端、网页搜索、浏览器或其他 MCP 服务器。生成图像时请调用实际的生成工具，工具不可用或调用失败时请说明原因。",
@@ -133,7 +172,20 @@
       "准确的启动值：\n\n{launch_spec}\n\n优先使用 subprocess.run 的参数列表和 shell=False。不要将 JSON 拼成 Shell 代码或混用 PowerShell 与 Bash 引号。辅助脚本应以 UTF-8 保存到已有写权限的工作目录，不要将 CLI 查找用作权限绕过。",
       "保存后执行以下只读检查。只调用 initialize、tools/list、participants，不发消息、不修改公告板、不启动 receive。子进程限时 20 秒；没有成功输出就不能报告连接验证成功。\n\n{verification}",
       "再用这些参数核对客户端注册结果。\n\n{inspection_argv}\n\n另行检查当前客户端是否能看到 receive、reply、participants。若需重连或新会话，不要终止现有对话；分别报告配置保存、桥接检查结果、客户端是否需要重新加载。无法执行时列出未完成步骤、准确错误和之后所需操作，不要声称完成，也不要等待用户回复或批准。"
-    ]
+    ],
+    "verification": {
+      "process_failed": "MCP进程运行失败",
+      "verification_failed": "MCP连接验证失败",
+      "missing_response": "未收到响应",
+      "wrong_server": "MCP服务器标识不匹配",
+      "missing_tools": "缺少必要的MCP工具",
+      "missing_agent": "此代理尚未在当前ACS中注册",
+      "verified": "MCP桥接连接已验证。",
+      "client_reload": "请另行确认客户端是否已重新加载MCP工具。",
+      "timeout": "MCP连接验证超过了20秒的时间限制。"
+    },
+    "config_codex": "Codex config.toml配置",
+    "config_claude": "Claude Code用户MCP配置"
   },
   "zh-TW": {
     "work_tools": "使用指定的 Relay 伺服器收發訊息。執行工作時，可以在使用者指示與現有權限範圍內，使用此工作階段提供的圖片生成與編輯、檔案操作、終端機、網頁搜尋、瀏覽器或其他 MCP 伺服器。生成圖片時請呼叫實際的生成工具，工具無法使用或執行失敗時請說明原因。",
@@ -167,7 +219,20 @@
       "正確的啟動值：\n\n{launch_spec}\n\n優先使用 subprocess.run 的參數清單與 shell=False。不要將 JSON 拼成 Shell 程式碼或混用 PowerShell 與 Bash 引號。輔助腳本應以 UTF-8 儲存至已有寫入權限的工作目錄，不要將 CLI 搜尋用作權限繞過。",
       "儲存後執行以下唯讀檢查。只呼叫 initialize、tools/list、participants，不發訊息、不修改公告板、不啟動 receive。子程序限時 20 秒；沒有成功輸出就不能回報連線驗證成功。\n\n{verification}",
       "再用這些參數核對用戶端註冊結果。\n\n{inspection_argv}\n\n另行檢查目前用戶端是否能看到 receive、reply、participants。若需重新連線或新工作階段，不要終止既有對話；分別回報設定儲存、橋接檢查結果、用戶端是否需要重新載入。無法執行時列出未完成步驟、正確錯誤及之後所需操作，不要宣稱完成，也不要等待使用者回覆或核准。"
-    ]
+    ],
+    "verification": {
+      "process_failed": "MCP程序執行失敗",
+      "verification_failed": "MCP連線驗證失敗",
+      "missing_response": "未收到回應",
+      "wrong_server": "MCP伺服器識別資訊不符",
+      "missing_tools": "缺少必要的MCP工具",
+      "missing_agent": "此代理尚未在目前的ACS中註冊",
+      "verified": "MCP橋接連線已驗證。",
+      "client_reload": "請另行確認用戶端是否已重新載入MCP工具。",
+      "timeout": "MCP連線驗證超過了20秒的時間限制。"
+    },
+    "config_codex": "Codex config.toml設定",
+    "config_claude": "Claude Code使用者MCP設定"
   },
   "ru": {
     "work_tools": "Используйте указанный сервер Relay для обмена сообщениями. Для самой работы используйте доступные в сеансе инструменты создания и редактирования изображений, работы с файлами, терминал, поиск, браузер и другие серверы MCP в пределах указаний пользователя и имеющихся разрешений. Для создания изображения вызовите инструмент генерации, а если он недоступен или завершился ошибкой, сообщите причину.",
@@ -201,7 +266,20 @@
       "Точные параметры запуска:\n\n{launch_spec}\n\nПредпочитайте список аргументов subprocess.run с shell=False. Не склеивайте JSON с кодом оболочки и не смешивайте кавычки PowerShell и Bash. Вспомогательный скрипт сохраняйте в UTF-8 в уже доступной для записи рабочей папке. Поиск CLI не должен служить обходом отказа в доступе.",
       "После сохранения выполните эту проверку только для чтения. Она вызывает лишь initialize, tools/list и participants, не публикует сообщения, не изменяет доску и не запускает receive. Таймаут процесса — 20 секунд. Без успешного вывода не заявляйте о проверенном соединении.\n\n{verification}",
       "Также проверьте регистрацию клиента этими аргументами.\n\n{inspection_argv}\n\nОтдельно проверьте видимость receive, reply и participants в текущем клиенте. Если нужна перезагрузка подключения или новый сеанс, не завершайте текущий разговор. Отдельно укажите сохранение конфигурации, результат проверки моста и необходимость перезагрузки клиента. Если выполнение невозможно, укажите незавершённый шаг, точную ошибку и последующее действие; не заявляйте об успехе и не ждите ответа или одобрения пользователя."
-    ]
+    ],
+    "verification": {
+      "process_failed": "Не удалось запустить процесс MCP",
+      "verification_failed": "Проверка подключения MCP не пройдена",
+      "missing_response": "Ответ не получен",
+      "wrong_server": "Идентификатор сервера MCP не совпадает",
+      "missing_tools": "Отсутствуют необходимые инструменты MCP",
+      "missing_agent": "Агент не зарегистрирован в этом экземпляре ACS",
+      "verified": "Подключение моста MCP проверено.",
+      "client_reload": "Отдельно проверьте, перезагрузил ли клиент инструменты MCP.",
+      "timeout": "Проверка подключения MCP превысила ограничение в 20 секунд."
+    },
+    "config_codex": "Настройки Codex config.toml",
+    "config_claude": "Пользовательская конфигурация MCP для Claude Code"
   },
   "de": {
     "work_tools": "Verwende den zugewiesenen Relay-Server für den Nachrichtenaustausch. Nutze für die eigentliche Arbeit die in dieser Sitzung verfügbaren Werkzeuge für Bilderzeugung und Bildbearbeitung, Dateizugriffe, Terminal, Websuche, Browser und weitere MCP-Server. Halte dabei die Vorgaben des Nutzers und die vorhandenen Berechtigungen ein. Verwende für Bildaufträge ein tatsächliches Bilderzeugungswerkzeug und nenne den Grund, falls das Werkzeug fehlt oder der Aufruf fehlschlägt.",
@@ -235,6 +313,19 @@
       "Verbindliche Startwerte:\n\n{launch_spec}\n\nVerwende möglichst subprocess.run mit Argumentliste und shell=False. Verknüpfe JSON nicht mit Shell-Code und vermische keine PowerShell- und Bash-Quotingregeln. Speichere kleine Hilfsskripte als UTF-8-Datei in einem bereits beschreibbaren Arbeitsordner. Die CLI-Suche darf keine Rechteverweigerung umgehen.",
       "Führe nach dem Speichern diese schreibgeschützte Prüfung aus. Sie ruft nur initialize, tools/list und participants auf, schreibt keine Nachrichten oder Pinnwandeinträge und startet kein receive. Der Kindprozess hat 20 Sekunden Zeit. Melde die Verbindung nur bei erfolgreicher Ausgabe als geprüft.\n\n{verification}",
       "Prüfe die Clientregistrierung zusätzlich mit diesen Argumenten.\n\n{inspection_argv}\n\nPrüfe getrennt, ob receive, reply und participants im aktuellen Client sichtbar sind. Ist eine neue Verbindung oder Sitzung nötig, beende den laufenden Chat nicht. Berichte getrennt über gespeicherte Konfiguration, Brückenprüfung und erforderliches Neuladen. Ist die Ausführung unmöglich, nenne offenen Schritt, genaue Fehlermeldung und spätere Maßnahme; melde keinen Erfolg und warte nicht auf Antwort oder Freigabe des Nutzers."
-    ]
+    ],
+    "verification": {
+      "process_failed": "MCP-Prozess fehlgeschlagen",
+      "verification_failed": "MCP-Verbindungsprüfung fehlgeschlagen",
+      "missing_response": "Antwort fehlt",
+      "wrong_server": "Die Identität des MCP-Servers stimmt nicht überein",
+      "missing_tools": "Erforderliche MCP-Werkzeuge fehlen",
+      "missing_agent": "Der Agent ist in dieser ACS-Instanz nicht registriert",
+      "verified": "Die MCP-Brücke wurde erfolgreich geprüft.",
+      "client_reload": "Prüfen Sie separat, ob der Client die MCP-Werkzeuge neu geladen hat.",
+      "timeout": "Die MCP-Verbindungsprüfung hat das Zeitlimit von 20 Sekunden überschritten."
+    },
+    "config_codex": "Codex-config.toml-Konfiguration",
+    "config_claude": "MCP-Benutzerkonfiguration für Claude Code"
   }
 }

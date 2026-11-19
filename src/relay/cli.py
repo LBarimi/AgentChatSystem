@@ -13,8 +13,8 @@ from urllib.parse import urlencode
 from urllib.request import ProxyHandler, Request, build_opener
 
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, MCP_TOOL_TIMEOUT_SECONDS, MCP_VERSION
-from relay.prompts import render_connection_prompts, setup_verification
-from relay.settings import APP_NAME, ARCHIVE, LISTEN_HOST, LOOPBACK, PROJECT, Settings
+from relay.prompts import prompt_catalog, render_connection_prompts, setup_verification
+from relay.settings import APP_NAME, ARCHIVE, LANGUAGES, LISTEN_HOST, LOOPBACK, PROJECT, Settings
 from relay.uploads import MAX_FILES, UploadError, upload_name, upload_size
 
 
@@ -162,6 +162,7 @@ def parser():
             action.add_argument('--next', dest='next_agent', help='이 답변을 받을 에이전트 ID')
     config = sub.add_parser("config", help="Codex/Claude MCP 설정 예시 출력")
     config.add_argument('--agent', help='등록된 에이전트 ID. 생략 시 기본 두 에이전트 출력.')
+    config.add_argument('--language', choices=LANGUAGES, help='Configuration language; defaults to bin/settings.ini.')
     return cli
 
 
@@ -175,6 +176,7 @@ def attachment_command(port, agent_id):
 
 
 def connection_setup(port, agent_id, role, *, language='en'):
+    language = language if language in LANGUAGES else 'en'
     exe = str(Path(sys.executable).resolve())
     args = [str(ARCHIVE)]
     try:
@@ -210,13 +212,13 @@ def connection_setup(port, agent_id, role, *, language='en'):
         'launch_spec': '```json\n' + json.dumps({'command': exe, 'args': args}, ensure_ascii=False, indent=2) + '\n```',
         'registration_argv': '```json\n' + json.dumps(register, ensure_ascii=False) + '\n```',
         'inspection_argv': '```json\n' + json.dumps(inspect, ensure_ascii=False) + '\n```',
-        'verification': '```python\n' + setup_verification([exe, *args], agent_id) + '```',
+        'verification': '```python\n' + setup_verification([exe, *args], agent_id, language=language) + '```',
         'port': port,
         'wait_seconds': DEFAULT_WAIT_SECONDS,
         'legacy_command': attachment_command(port, agent_id),
     }
     return {
-        'server': server, 'config': snippet, 'config_path': str(config_path),
+        'server': server, 'config': snippet, 'config_path': str(config_path), 'language': language,
         **render_connection_prompts(language, role, values),
     }
 
@@ -246,12 +248,14 @@ def main():
             from relay.mcp import run
             return run(client, args.agent)
         if args.action == "config":
+            language = args.language or settings.language()
             if args.agent:
-                setup = client.call('/api/setup?' + urlencode({'agent': args.agent}))
+                setup = client.call('/api/setup?' + urlencode({'agent': args.agent, 'lang': language}))
                 print(setup['config'])
             else:
-                print('Codex config.toml:\n' + connection_setup(port, 'codex', 'codex')['config'])
-                print('\nClaude Code user MCP configuration:\n' + connection_setup(port, 'claude', 'claude')['config'])
+                catalog = prompt_catalog(language)
+                print(catalog['config_codex'] + ':\n' + connection_setup(port, 'codex', 'codex', language=language)['config'])
+                print('\n' + catalog['config_claude'] + ':\n' + connection_setup(port, 'claude', 'claude', language=language)['config'])
             return 0
         if args.action == "status":
             result = client.call("/api/room?" + urlencode({'channel': args.channel}))

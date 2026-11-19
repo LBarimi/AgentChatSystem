@@ -253,5 +253,8 @@
   "iconImageTypes": "Wählen Sie ein PNG-, JPG- oder GIF-Bild.",
   "errorParticipantIcon": "Wählen Sie ein Teilnehmersymbol.",
   "selfUser": "{name} (Ich)",
-  "chatUser": "Benutzer"
+  "chatUser": "Benutzer",
+  "promptLanguage": "Prompt-Sprache: {language}",
+  "reloadPrompts": "Prompts neu laden",
+  "promptLoadFailed": "Die Prompts konnten nicht in der gewählten Sprache geladen werden."
 }

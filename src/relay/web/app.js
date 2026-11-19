@@ -864,38 +864,72 @@ el("icon-form").addEventListener("submit", async (event) => {
     await discardUploads(uploads);
   }
 });
-setupDialog.addEventListener("close", clearIconDraft);
+setupDialog.addEventListener("close", () => {
+  clearIconDraft();
+  setupRequest++;
+  setupDialog.removeAttribute("aria-busy");
+});
 
-async function openSetup(agentId) {
+function setSetupPromptLoading() {
+  setupDialog.setAttribute("aria-busy", "true");
+  for (const button of setupDialog.querySelectorAll("[data-copy]")) button.disabled = true;
+  for (const id of ["setup-prompt", "setup-install-prompt", "setup-config"]) el(id).textContent = "";
+  for (const id of ["setup-feedback", "setup-install-feedback", "setup-config-feedback"]) el(id).textContent = "";
+  el("setup-language").textContent = t("loading");
+  showMessage("setup-prompts-error", "");
+  el("setup-prompts-retry").hidden = true;
+}
+
+function renderSetupPrompts(setup, language) {
+  const name = current?.participants.find((agent) => agent.id === setup.id)?.name || setup.name;
+  el("setup-title").textContent = t("connectAgent", { name });
+  el("setup-id").textContent = roleName[setup.role] + " · " + setup.id;
+  el("setup-language").textContent = t("promptLanguage", { language: languageSelect.selectedOptions[0]?.textContent || language });
+  el("setup-install").hidden = !setup.install_prompt;
+  el("setup-install-prompt").textContent = setup.install_prompt || "";
+  el("setup-install-instruction").textContent = t(setup.role === "codex" ? "codexInstall" : "claudeInstall");
+  el("setup-instruction").textContent = setup.role === "codex"
+    ? t("codexConfigHint") : t("claudeConfigHint", { path: setup.config_path || "~/.claude.json" });
+  el("setup-config").textContent = setup.config;
+  el("setup-prompt").textContent = setup.prompt;
+  for (const id of ["setup-prompt", "setup-install-prompt", "setup-config"]) el(id).lang = language;
+  for (const button of setupDialog.querySelectorAll("[data-copy]")) button.disabled = false;
+  setupDialog.removeAttribute("aria-busy");
+}
+
+async function openSetup(agentId, refreshOnly = false) {
+  if (refreshOnly && (!setupDialog.open || setupAgent !== agentId)) return;
   const requestId = ++setupRequest;
   const language = document.documentElement.lang;
+  setSetupPromptLoading();
   const query = new URLSearchParams({ agent: agentId, lang: language });
-  const setup = await request("/api/setup?" + query);
+  let setup;
+  try {
+    setup = await request("/api/setup?" + query);
+  } catch (error) {
+    if (requestId !== setupRequest) return;
+    setupDialog.removeAttribute("aria-busy");
+    showMessage("setup-prompts-error", t("promptLoadFailed") + " " + error.message);
+    el("setup-prompts-retry").hidden = false;
+    if (!refreshOnly) throw error;
+    return;
+  }
   if (requestId !== setupRequest) return;
-  if (language !== document.documentElement.lang) return openSetup(agentId);
+  if (refreshOnly && (!setupDialog.open || setupAgent !== agentId)) return;
+  if (language !== document.documentElement.lang) return openSetup(agentId, refreshOnly);
   setupAgent = setup.id;
-  initializeIconEditor(setup);
-  el("agent-name").value = setup.name;
-  showMessage("rename-error", "");
-  el("setup-title").textContent = t("connectAgent", { name: setup.name });
-  el("setup-id").textContent = roleName[setup.role] + " · " + setup.id;
-  el("setup-install").hidden = !setup.install_prompt;
-  el("setup-install-preview").open = false;
-  el("setup-manual-config").open = false;
-  el("setup-install-prompt").textContent = setup.install_prompt || "";
-  el("setup-install-instruction").textContent = setup.role === "codex"
-    ? t("codexInstall")
-    : t("claudeInstall");
-  el("setup-install-feedback").textContent = "";
-  el("setup-instruction").textContent = setup.role === "codex"
-    ? t("codexConfigHint")
-    : t("claudeConfigHint", { path: setup.config_path || "~/.claude.json" });
-  el("setup-config").textContent = setup.config;
-  el("setup-config-feedback").textContent = "";
-  el("setup-prompt").textContent = setup.prompt;
-  el("setup-feedback").textContent = "";
+  if (!refreshOnly) {
+    initializeIconEditor(setup);
+    el("agent-name").value = setup.name;
+    showMessage("rename-error", "");
+    el("setup-install-preview").open = false;
+    el("setup-manual-config").open = false;
+  }
+  renderSetupPrompts(setup, language);
   if (!setupDialog.open) setupDialog.showModal();
 }
+
+el("setup-prompts-retry").addEventListener("click", () => openSetup(setupAgent, true));
 
 el("roster").addEventListener("click", async (event) => {
   const card = event.target.closest("[data-agent]");
@@ -1112,6 +1146,7 @@ document.addEventListener("languagechange", () => {
   connection(live);
   showChatFiles();
   if (foldersDialog.open) loadChannelFiles();
+  if (setupDialog.open && setupAgent) openSetup(setupAgent, true);
 });
 
 initializeLanguage().then(() => {

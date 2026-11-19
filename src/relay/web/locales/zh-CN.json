@@ -253,5 +253,8 @@
   "iconImageTypes": "请选择PNG、JPG或GIF图片。",
   "errorParticipantIcon": "请选择参与者图标。",
   "selfUser": "{name}（我）",
-  "chatUser": "用户"
+  "chatUser": "用户",
+  "promptLanguage": "提示词语言：{language}",
+  "reloadPrompts": "重新加载提示词",
+  "promptLoadFailed": "无法加载所选语言的提示词。"
 }

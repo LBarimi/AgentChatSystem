@@ -253,5 +253,8 @@
   "iconImageTypes": "PNG、JPG、GIF画像を選択してください。",
   "errorParticipantIcon": "参加者アイコンを選択してください。",
   "selfUser": "{name}（自分）",
-  "chatUser": "ユーザー"
+  "chatUser": "ユーザー",
+  "promptLanguage": "プロンプトの言語：{language}",
+  "reloadPrompts": "プロンプトを再読み込み",
+  "promptLoadFailed": "選択した言語のプロンプトを読み込めませんでした。"
 }

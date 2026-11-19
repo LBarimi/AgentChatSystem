@@ -19,14 +19,16 @@ def listening_marker(agent_id):
     return f'[{APP_NAME}:{agent_id}]'
 
 
-def setup_verification(command, agent_id):
+def setup_verification(command, agent_id, *, language='en'):
     """A bounded, read-only MCP check that never edits client configuration."""
+    messages = prompt_catalog(language)['verification']
     return dedent(f'''\
         import json
         import subprocess
 
         command = {command!r}
         agent = {agent_id!r}
+        messages = {messages!r}
         packets = [
             {{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {{
                 "protocolVersion": "2025-03-26", "capabilities": {{}},
@@ -38,11 +40,16 @@ def setup_verification(command, agent_id):
                 "name": "participants", "arguments": {{}},
             }}}},
         ]
-        result = subprocess.run(command, input="".join(json.dumps(p) + "\\n" for p in packets),
-                                text=True, encoding="utf-8", capture_output=True, timeout=20,
-                                shell=False)
+        try:
+            result = subprocess.run(command, input="".join(json.dumps(p) + "\\n" for p in packets),
+                                    text=True, encoding="utf-8", capture_output=True, timeout=20,
+                                    shell=False)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(messages["timeout"]) from None
+        except OSError as error:
+            raise RuntimeError(messages["process_failed"] + ": " + str(error)) from error
         if result.returncode:
-            raise RuntimeError("MCP process failed: " + result.stderr[-2000:])
+            raise RuntimeError(messages["process_failed"] + ": " + result.stderr[-2000:])
         replies = {{}}
         for line in result.stdout.splitlines():
             packet = json.loads(line)
@@ -50,18 +57,19 @@ def setup_verification(command, agent_id):
                 replies[packet["id"]] = packet
         for ident in (1, 2, 3):
             if ident not in replies or "error" in replies[ident] or replies[ident].get("result", {{}}).get("isError"):
-                detail = replies.get(ident, {{"error": "Missing response"}})
-                raise RuntimeError("MCP verification failed: " + json.dumps(detail, ensure_ascii=False)[:2000])
+                detail = replies.get(ident, {{"error": messages["missing_response"]}})
+                raise RuntimeError(messages["verification_failed"] + ": " + json.dumps(detail, ensure_ascii=False)[:2000])
         if replies[1]["result"]["serverInfo"]["name"] != "local-chat-" + agent:
-            raise RuntimeError("Wrong MCP server identity")
+            raise RuntimeError(messages["wrong_server"])
         names = {{tool["name"] for tool in replies[2]["result"]["tools"]}}
         if not {{"receive", "reply", "participants"}} <= names:
-            raise RuntimeError("Required MCP tools are missing")
+            raise RuntimeError(messages["missing_tools"])
         content = replies[3]["result"]["content"]
         participants = json.loads(next(item["text"] for item in content if item["type"] == "text"))
         if not any(item["id"] == agent for item in participants["participants"]):
-            raise RuntimeError("Agent is not registered in this ACS instance")
-        print(json.dumps({{"bridge": "verified", "agent": agent, "client_reload": "check separately"}}))
+            raise RuntimeError(messages["missing_agent"])
+        print(json.dumps({{"bridge": "verified", "agent": agent, "client_reload": "check separately",
+                          "message": messages["verified"], "client_reload_message": messages["client_reload"]}}, ensure_ascii=False))
         ''')
 
 
