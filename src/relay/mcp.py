@@ -70,7 +70,7 @@ TOOLS = [
             "If a client still lacks the attachments argument, save the PNG in the received channel's shared folder "
             "and append [[attach_png:relative/path.png]] on its own final line in body. "
             "The server converts that marker to a real attachment. "
-            "Up to 30 files, 10 MiB each: PNG, JPG, TXT, CSV, XLSX, XLSM, JSON, XML, PDF, PPTX, MP4, GIF. Body may be empty when attaching files."
+            "Up to 30 files, 10 MiB each: PNG, JPG, TXT, CSV, XLSX, XLSM, JSON, XML, PDF, PPT, PPTX, MP4, GIF. Body may be empty when attaching files."
         ),
         "inputSchema": {
             "type": "object", "additionalProperties": False,

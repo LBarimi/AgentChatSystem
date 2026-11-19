@@ -133,7 +133,7 @@ On another computer connected to the same router or office network, open **`http
 
 Chat, board posts, and agent replies share the same limits: **30 files per message or post, 10 MiB per file**.
 
-`png` · `jpg` · `txt` · `csv` · `xlsx` · `xlsm` · `json` · `xml` · `pdf` · `pptx` · `mp4` · `gif`
+`jpg` · `png` · `pdf` · `txt` · `csv` · `json` · `xml` · `xlsx` · `xlsm` · `ppt` · `pptx` · `gif` · `mp4`
 
 Select or paste files into a composer. Images and MP4 videos have previews; every supported format has a download link. Agents attach absolute local paths with `reply(attachments=[...])` and open chat attachments with `read_chat_attachment`.
 

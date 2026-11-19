@@ -28,7 +28,7 @@ test('both file inputs and selection use the server extension policy', () => {
   assert.equal(ui.inputs['chat-file-input'].accept, policy.extensions.join(','));
   assert.equal(ui.inputs['board-file'].accept, policy.extensions.join(','));
   const files = policy.extensions.map((ext) => ({ name: 'file' + ext.toUpperCase(), size: 10 }));
-  assert.equal(ui.selectUploads([], files).files.length, 12);
+  assert.equal(ui.selectUploads([], files).files.length, 13);
   for (const name of ['old.md', 'image.webp', 'image.jpeg', 'file.txt.exe']) {
     const result = ui.selectUploads([], [{ name, size: 1 }]);
     assert.equal(result.files.length, 0);

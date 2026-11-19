@@ -36,7 +36,8 @@ class Attachments(unittest.TestCase):
                                                   'request_id': str(uuid4()), 'attachments': attachments})['message']
 
     def test_chat_and_board_share_exact_extensions_and_case_handling(self):
-        self.assertEqual(set(MIME_TYPES), {'.png', '.jpg', '.txt', '.csv', '.xlsx', '.xlsm', '.json', '.xml', '.pdf', '.pptx', '.mp4', '.gif'})
+        self.assertEqual(set(MIME_TYPES), {'.png', '.jpg', '.txt', '.csv', '.xlsx', '.xlsm', '.json', '.xml', '.pdf', '.ppt', '.pptx', '.mp4', '.gif'})
+        self.assertEqual(prepare_files([self.inline('slides.ppt', b'')])[0][1], 'application/vnd.ms-powerpoint')
         samples = {'.png': b'\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR', '.jpg': b'\xff\xd8\xff',
                    '.gif': b'GIF89a', '.mp4': b'\0\0\0\x18ftypisom'}
         items = [self.inline('report' + ext.upper(), samples.get(ext, b'data')) for ext in MIME_TYPES]

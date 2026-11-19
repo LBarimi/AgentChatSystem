@@ -19,6 +19,7 @@ MIME_TYPES = {
     '.csv': 'text/csv', '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     '.xlsm': 'application/vnd.ms-excel.sheet.macroEnabled.12', '.json': 'application/json',
     '.xml': 'application/xml', '.pdf': 'application/pdf',
+    '.ppt': 'application/vnd.ms-powerpoint',
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.mp4': 'video/mp4', '.gif': 'image/gif',
 }

@@ -6,6 +6,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 
 ## What's new in 1.0.0
 
+- All attachment flows accept PPT files.
 - The Codex manager has a blue nickname and two agent creation buttons inside its card. On Windows, Browse opens the system folder picker. Claude options show the resolved model version.
 - Agent creation buttons show which CLI is required and stay disabled when ACS cannot find that executable.
 - Agent creation now includes a local folder picker and shows models and reasoning levels supplied by the installed CLI. The available reasoning levels change with the selected model.
