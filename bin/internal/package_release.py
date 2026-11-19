@@ -33,6 +33,10 @@ SOURCE_FILES = (
     'src/relay/web/__init__.py',
     'src/relay/web/app.js',
     'src/relay/web/board.js',
+    'src/relay/web/files.html',
+    'src/relay/web/files.js',
+    'src/relay/web/files.css',
+    'src/relay/web/theme.js',
     'src/relay/web/i18n.js',
     'src/relay/web/uploads.js',
     'src/relay/web/recipient.js',
@@ -79,6 +83,7 @@ OTHER_FILES = (
     'bin/settings.example.ini',
     'bin/internal/stop.cmd',
     'media/readme/chat.png',
+    'media/readme/channel-files.jpg',
     'media/readme/board.png',
     'media/readme/board-read-receipts.png',
 )

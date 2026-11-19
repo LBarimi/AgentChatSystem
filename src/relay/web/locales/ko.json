@@ -256,5 +256,11 @@
   "chatUser": "사용자",
   "promptLanguage": "프롬프트 언어: {language}",
   "reloadPrompts": "프롬프트 다시 불러오기",
-  "promptLoadFailed": "선택한 언어의 프롬프트를 불러오지 못했습니다."
+  "promptLoadFailed": "선택한 언어의 프롬프트를 불러오지 못했습니다.",
+  "folderLinksHint": "폴더를 새 페이지에서 열어 하위 폴더를 탐색하고 파일을 다운로드합니다.",
+  "backToChat": "채팅으로",
+  "folderBreadcrumb": "폴더 경로",
+  "fileName": "이름",
+  "fileSize": "크기",
+  "filePagination": "파일 목록 페이지"
 }

@@ -256,5 +256,11 @@
   "chatUser": "ユーザー",
   "promptLanguage": "プロンプトの言語：{language}",
   "reloadPrompts": "プロンプトを再読み込み",
-  "promptLoadFailed": "選択した言語のプロンプトを読み込めませんでした。"
+  "promptLoadFailed": "選択した言語のプロンプトを読み込めませんでした。",
+  "folderLinksHint": "フォルダーを別ページで開き、サブフォルダーの参照やファイルのダウンロードができます。",
+  "backToChat": "チャットへ",
+  "folderBreadcrumb": "フォルダーのパス",
+  "fileName": "名前",
+  "fileSize": "サイズ",
+  "filePagination": "ファイル一覧のページ"
 }

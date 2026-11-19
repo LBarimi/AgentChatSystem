@@ -16,8 +16,6 @@ const setupDialog = el("setup-dialog");
 const agentDeleteDialog = el("agent-delete-dialog");
 const channelDialog = el("channel-dialog");
 const foldersDialog = el("folders-dialog");
-const theme = el("theme");
-const systemTheme = matchMedia("(prefers-color-scheme: dark)");
 const drafts = new Map();
 const defaultChannel = "general";
 let activeChannel = localStorage.getItem("relay-channel") || defaultChannel;
@@ -39,22 +37,6 @@ let participantKey = "";
 let messageKey = "";
 let channelKey = "";
 let boardOpen = false;
-let filesRequest = 0;
-let filesView = { kind: "shared", path: "", offset: 0 };
-
-theme.value = localStorage.getItem("relay-theme") || "system";
-if (!theme.value) theme.value = "system";
-function applyTheme() {
-  const selected = theme.value === "system" ? (systemTheme.matches ? "dark" : "light") : theme.value;
-  document.documentElement.dataset.theme = selected;
-  document.querySelector('meta[name="theme-color"]').content = getComputedStyle(document.documentElement).getPropertyValue("--cool").trim();
-}
-applyTheme();
-theme.addEventListener("change", () => {
-  applyTheme();
-  localStorage.setItem("relay-theme", theme.value);
-});
-systemTheme.addEventListener("change", applyTheme);
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -664,6 +646,9 @@ function showFolderPaths(channel) {
   el("shared-path").textContent = channel.shared;
   el("server-folder-settings").hidden = !["localhost", "127.0.0.1"].includes(location.hostname);
   el("logs-path").textContent = channel.logs;
+  for (const kind of ["shared", "logs"]) {
+    el(kind + "-link").href = "/files?" + new URLSearchParams({ channel: channel.id, kind });
+  }
 }
 
 el("show-folders").addEventListener("click", () => {
@@ -673,63 +658,8 @@ el("show-folders").addEventListener("click", () => {
   showMessage("folder-error", "");
   el("folders-feedback").textContent = "";
   foldersDialog.showModal();
-  el("files-kind").value = "shared";
   el("server-folder-settings").open = false;
-  loadChannelFiles("shared");
 });
-
-async function loadChannelFiles(kind = filesView.kind, path = filesView.path, offset = filesView.offset) {
-  const requestId = ++filesRequest;
-  const channel = foldersDialog.dataset.channel;
-  filesView = { kind, path, offset };
-  const list = el("channel-files");
-  list.replaceChildren();
-  el("files-path").textContent = `${kind}/${path}`;
-  el("files-up").disabled = !path;
-  el("files-previous").disabled = true;
-  el("files-next").disabled = true;
-  el("files-status").textContent = t("loading");
-  showMessage("files-error", "");
-  try {
-    const query = new URLSearchParams({ channel, kind, path, offset });
-    const result = await request("/api/files?" + query);
-    if (requestId !== filesRequest || !foldersDialog.open) return;
-    for (const entry of result.entries) {
-      const row = element("li", "channel-file");
-      const name = entry.path.split("/").at(-1);
-      if (entry.type === "folder") {
-        const folder = element("button", "file-entry", name + "/");
-        folder.type = "button";
-        folder.prepend(icon("chevron-right"));
-        folder.addEventListener("click", () => loadChannelFiles(kind, entry.path, 0));
-        row.append(folder);
-      } else {
-        const info = element("span", "file-info");
-        info.append(element("span", "file-name", name), element("small", "file-size", `${entry.bytes.toLocaleString()} B`));
-        const link = element("a", "button secondary", t("download"));
-        link.href = "/api/files/download?" + new URLSearchParams({ channel, kind, path: entry.path });
-        link.download = name;
-        link.setAttribute("aria-label", t("downloadFile", { name }));
-        row.append(info, link);
-      }
-      list.append(row);
-    }
-    el("files-status").textContent = result.entries.length ? t("filesPage", { page: Math.floor(offset / 200) + 1 }) : t("noFiles");
-    el("files-previous").disabled = offset === 0;
-    el("files-next").disabled = !result.truncated;
-  } catch (error) {
-    if (requestId !== filesRequest || !foldersDialog.open) return;
-    el("files-status").textContent = "";
-    showMessage("files-error", error.message);
-  }
-}
-
-el("files-kind").addEventListener("change", () => loadChannelFiles(el("files-kind").value, "", 0));
-el("files-refresh").addEventListener("click", () => loadChannelFiles());
-el("files-up").addEventListener("click", () => loadChannelFiles(filesView.kind, filesView.path.split("/").slice(0, -1).join("/"), 0));
-el("files-previous").addEventListener("click", () => loadChannelFiles(filesView.kind, filesView.path, Math.max(0, filesView.offset - 200)));
-el("files-next").addEventListener("click", () => loadChannelFiles(filesView.kind, filesView.path, filesView.offset + 200));
-foldersDialog.addEventListener("close", () => { filesRequest++; });
 
 async function saveFolder(path) {
   const channelId = foldersDialog.dataset.channel;
@@ -748,7 +678,6 @@ async function saveFolder(path) {
     });
     if (foldersDialog.dataset.channel === channelId) {
       showFolderPaths(saved);
-      loadChannelFiles(el("files-kind").value, "", 0);
       el("folders-feedback").textContent = t("locationSaved");
     }
     if (activeChannel === channelId) loadRoom();
@@ -1145,7 +1074,10 @@ document.addEventListener("languagechange", () => {
   if (current) applyRoom(current, true);
   connection(live);
   showChatFiles();
-  if (foldersDialog.open) loadChannelFiles();
+  if (foldersDialog.open) {
+    const channel = current?.channels.find((item) => item.id === foldersDialog.dataset.channel);
+    if (channel) el("folders-channel").textContent = channelName(channel);
+  }
   if (setupDialog.open && setupAgent) openSetup(setupAgent, true);
 });
 

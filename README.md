@@ -88,7 +88,7 @@ If `reply` does not offer the `attachments` argument, place the PNG in the recei
 
 </details>
 
-**Channel folders** opens the current channel's [shared files and chat logs](#local-data). Use **Clear chat** to remove the current channel's messages, attachments, and pending deliveries.
+**Channel folders** shows links to the current channel’s [shared files and chat logs](#local-data), each opening a dedicated download page in a new tab. Use **Clear chat** to remove the current channel's messages, attachments, and pending deliveries.
 
 ## Share instructions on the board
 
@@ -137,9 +137,11 @@ var/channels/<channel-id>/
     └── chat.jsonl
 ```
 
-Use **Channel folders** to browse `shared` and `logs`, navigate subfolders, and download files to the device running your browser. Listings have 200 entries per page; downloads support binary files and are streamed without the MCP text-size limit. File paths stay inside the selected channel folder, and symbolic links are excluded.
+Open **Channel folders**, then select `shared/` or `logs/` to browse files in a separate tab. Follow folders such as `shared/ → docs/`, use the breadcrumb links or **Parent folder**, and download files by name or with the download button. Folder URLs preserve the channel, directory, and page, so browser history, refresh, bookmarks, and sharing within the same LAN work normally. The page uses the same themes and seven languages as chat. Folders appear first, followed by files sorted by name, with aligned name, size, and download columns. Listings have 200 entries per page; downloads support binary files and are streamed without the MCP text-size limit. File paths stay inside the selected channel folder, and symbolic links are excluded.
 
 When visiting through `127.0.0.1` or `localhost`, expand **Storage settings on the server computer** to change the storage location, copy existing shared files, or open the server’s file manager. On Linux, opening the file manager requires a graphical desktop session with `xdg-open`. Agents receive the channel paths with each message. Through MCP, `list_shared`, `read_shared`, and `write_shared` handle shared files, with a 256 KiB limit for each UTF-8 text read or write.
+
+![A dedicated channel download page showing shared/docs, a subfolder, file sizes, and download buttons](media/readme/channel-files.jpg)
 
 ## Build and package
 

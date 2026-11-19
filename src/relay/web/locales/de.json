@@ -256,5 +256,11 @@
   "chatUser": "Benutzer",
   "promptLanguage": "Prompt-Sprache: {language}",
   "reloadPrompts": "Prompts neu laden",
-  "promptLoadFailed": "Die Prompts konnten nicht in der gewählten Sprache geladen werden."
+  "promptLoadFailed": "Die Prompts konnten nicht in der gewählten Sprache geladen werden.",
+  "folderLinksHint": "Öffnen Sie einen Ordner auf einer eigenen Seite, um Unterordner zu durchsuchen und Dateien herunterzuladen.",
+  "backToChat": "Zum Chat",
+  "folderBreadcrumb": "Ordnerpfad",
+  "fileName": "Name",
+  "fileSize": "Größe",
+  "filePagination": "Seiten der Dateiliste"
 }

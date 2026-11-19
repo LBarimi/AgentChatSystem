@@ -693,6 +693,10 @@ class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
     static = {
         "/": ("index.html", "text/html; charset=utf-8"),
+        "/files": ("files.html", "text/html; charset=utf-8"),
+        "/files.js": ("files.js", "text/javascript; charset=utf-8"),
+        "/files.css": ("files.css", "text/css; charset=utf-8"),
+        "/theme.js": ("theme.js", "text/javascript; charset=utf-8"),
         "/i18n.js": ("i18n.js", "text/javascript; charset=utf-8"),
         "/uploads.js": ("uploads.js", "text/javascript; charset=utf-8"),
         "/recipient.js": ("recipient.js", "text/javascript; charset=utf-8"),

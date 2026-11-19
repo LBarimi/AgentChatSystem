@@ -256,5 +256,11 @@
   "chatUser": "User",
   "promptLanguage": "Prompt language: {language}",
   "reloadPrompts": "Reload prompts",
-  "promptLoadFailed": "Could not load the prompts in the selected language."
+  "promptLoadFailed": "Could not load the prompts in the selected language.",
+  "folderLinksHint": "Open a folder in a new page to browse subfolders and download files.",
+  "backToChat": "Back to chat",
+  "folderBreadcrumb": "Folder path",
+  "fileName": "Name",
+  "fileSize": "Size",
+  "filePagination": "File pages"
 }

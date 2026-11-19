@@ -256,5 +256,11 @@
   "chatUser": "用户",
   "promptLanguage": "提示词语言：{language}",
   "reloadPrompts": "重新加载提示词",
-  "promptLoadFailed": "无法加载所选语言的提示词。"
+  "promptLoadFailed": "无法加载所选语言的提示词。",
+  "folderLinksHint": "在新页面中打开文件夹，浏览子文件夹并下载文件。",
+  "backToChat": "返回聊天",
+  "folderBreadcrumb": "文件夹路径",
+  "fileName": "名称",
+  "fileSize": "大小",
+  "filePagination": "文件列表分页"
 }

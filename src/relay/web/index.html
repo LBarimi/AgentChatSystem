@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#f4f7fb">
   <title>AgentChatSystem — 작업실</title>
   <link rel="stylesheet" href="/style.css">
+  <script src="/theme.js" defer></script>
   <script src="/i18n.js" defer></script>
   <script src="/upload-policy.js" defer></script>
   <script src="/uploads.js" defer></script>
@@ -202,18 +203,17 @@
   <dialog id="folders-dialog" aria-labelledby="folders-title">
     <div class="dialog-body">
       <header><div><h2 id="folders-title" data-i18n="channelFolder">채널 폴더</h2><p id="folders-channel"></p></div><button class="button icon-button" type="button" data-close="folders-dialog" aria-label="닫기" data-i18n-aria-label="close"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button></header>
-      <section class="file-browser" aria-label="채널 파일" data-i18n-aria-label="channelFiles">
-        <p data-i18n="downloadHint">서버 PC의 파일을 이 기기로 다운로드합니다.</p>
-        <div class="file-toolbar">
-          <label><span data-i18n="fileFolder">폴더</span><select id="files-kind"><option value="shared">shared</option><option value="logs">logs</option></select></label>
-          <button class="button secondary" id="files-refresh" type="button" data-i18n="refreshFiles">새로고침</button>
-        </div>
-        <div class="file-location"><button class="button secondary" id="files-up" type="button" data-i18n="parentFolder" disabled>상위 폴더</button><code id="files-path">shared/</code></div>
-        <ul class="channel-files" id="channel-files"></ul>
-        <p id="files-status" role="status"></p>
-        <p class="form-error" id="files-error" role="alert" hidden></p>
-        <div class="file-pages"><button class="button secondary" id="files-previous" type="button" data-i18n="filePrevious" disabled>이전</button><button class="button secondary" id="files-next" type="button" data-i18n="fileNext" disabled>다음</button></div>
-      </section>
+      <p data-i18n="folderLinksHint">폴더를 새 페이지에서 열어 하위 폴더를 탐색하고 파일을 다운로드합니다.</p>
+      <nav class="folder-links" aria-label="채널 파일" data-i18n-aria-label="channelFiles">
+        <a class="folder-shortcut" id="shared-link" target="_blank" rel="noopener">
+          <span><strong>shared/</strong><small data-i18n="sharedHint">이 채널의 참가자끼리 파일을 공유하는 폴더입니다.</small></span>
+          <svg class="icon" aria-hidden="true"><use href="/vendor/icons.svg#arrow-right"></use></svg>
+        </a>
+        <a class="folder-shortcut" id="logs-link" target="_blank" rel="noopener">
+          <span><strong>logs/</strong><small data-i18n="logsHint">보낸 메시지와 답변이 chat.jsonl에 자동 저장됩니다.</small></span>
+          <svg class="icon" aria-hidden="true"><use href="/vendor/icons.svg#arrow-right"></use></svg>
+        </a>
+      </nav>
       <details id="server-folder-settings" class="server-folder-settings">
         <summary data-i18n="serverFolderSettings">서버 PC의 저장 위치 설정</summary>
       <form class="folder-form" id="folder-form">

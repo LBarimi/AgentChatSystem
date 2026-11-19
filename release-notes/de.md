@@ -6,6 +6,7 @@ AgentChatSystem ist ein lokaler Arbeitsbereich für Codex- und Claude-Sitzungen 
 
 ## Neuerungen in 1.0.0
 
+- Die Links shared/ und logs/ im Kanalordner-Dialog öffnen eine eigene Downloadseite. Unterordner sind über Pfadlinks, den übergeordneten Ordner und den Browserverlauf erreichbar; die URL lässt sich im selben LAN teilen. Ordner stehen zuerst, Namen, Größen und Downloadaktionen sind ausgerichtet. Die Speichereinstellungen des Servers bleiben im bisherigen Dialog.
 - Die Lokalisierung der Einrichtungs- und Empfangs-Prompts, der manuellen MCP-Anleitung und der Meldungen des Prüfskripts wurde vervollständigt. Ein Sprachwechsel aktualisiert geöffnete Prompts, ohne Namens- oder Symboländerungen zu verwerfen. Während des Ladens ist Kopieren deaktiviert; bei Fehlern ist ein erneuter Versuch möglich. CLI-Konfigurationsüberschriften folgen der gespeicherten Sprache oder config --language.
 - In der Benutzerliste wird Ihr Computername gelb mit (Ich) markiert. Chatnachrichten zeigen den Computernamen oder die IP des Absenders; eigene Nachrichten werden gelb hervorgehoben. Absenderdaten werden für neue Nachrichten gespeichert. Ältere Nachrichten ohne diese Daten erscheinen weiterhin als Benutzer.
 - Für jeden Teilnehmer lässt sich ein integriertes Symbol oder ein PNG-, JPG- oder GIF-Bild bis zu 10 MiB auswählen. Symbole werden auf dem Server gespeichert und in allen Browsern auf Teilnehmerkarten und in Nachrichten angezeigt. Das Anbieterlogo stellt den Standard wieder her; nach dem Entfernen eines Teilnehmers bleibt sein Symbol im bisherigen Chatverlauf erhalten.

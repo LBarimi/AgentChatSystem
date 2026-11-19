@@ -187,7 +187,7 @@ class ChannelStorage:
         if not folder.is_dir():
             raise StorageError('폴더를 찾을 수 없습니다.', 404, key='errorFileMissing')
         entries = []
-        for path in sorted(folder.iterdir(), key=lambda p: p.name.casefold()):
+        for path in folder.iterdir():
             try:
                 self.file_path(root, kind, path.relative_to(base).as_posix())
                 if path.is_dir():
@@ -196,6 +196,7 @@ class ChannelStorage:
                     entries.append({'path': path.relative_to(base).as_posix(), 'type': 'file', 'bytes': path.stat().st_size})
             except (OSError, StorageError):
                 continue
+        entries.sort(key=lambda entry: (entry['type'] != 'folder', entry['path'].casefold(), entry['path']))
         return {'directory': str(folder), 'path': folder.relative_to(base).as_posix() if folder != base else '',
                 'entries': entries[offset:offset + 200], 'offset': offset, 'truncated': len(entries) > offset + 200}
 
