@@ -24,6 +24,7 @@ from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, LEGACY_MAX_WA
 from relay.settings import APP_NAME, LANGUAGES, LISTEN_HOST, LOOPBACK, Settings
 from relay.session_details import ParticipantDetails
 from relay.presence import ConnectedUsers
+from relay.prompts import prompt_catalog
 
 ROLES = ("codex", "claude")
 DEFAULT_CHANNEL = "general"
@@ -623,6 +624,32 @@ class Room:
         message = self.db.execute(f'SELECT {MESSAGE_FIELDS} FROM messages m WHERE id=?', (message_id,)).fetchone()
         return self.chat_files.attach_metadata((message,))[0]
 
+    def announce_connection(self, payload):
+        request_id = payload.get('request_id')
+        try:
+            if not isinstance(request_id, str) or len(request_id) != 36:
+                raise ValueError
+            request_id = str(UUID(request_id))
+        except ValueError:
+            raise RequestError('전송 요청 ID를 확인하세요.', key='errorRequestId') from None
+        language = payload.get('language', 'en')
+        if not isinstance(language, str) or language not in LANGUAGES:
+            raise RequestError('Unsupported language.')
+        agent = payload.get('agent') or ''
+        with self.changed:
+            channel_id = self.channel_scope(payload.get('channel_id'), agent)
+            existing = self.db.execute(f'SELECT {MESSAGE_FIELDS} FROM messages m WHERE request_id=?', (request_id,)).fetchone()
+            if existing:
+                if (existing['channel_id'] != channel_id or existing['sender'] != agent
+                        or existing['recipient'] is not None or existing['reply_to'] is not None):
+                    raise RequestError('전송 요청 ID가 이미 사용 중입니다.', 409, key='errorRequestUsed')
+                return {'message': dict(existing), 'duplicate': True}
+            with self.db:
+                message = self._insert(channel_id, agent, None, prompt_catalog(language)['connected_notice'], request_id=request_id)
+            self._write_log(channel_id, message)
+            self._notify()
+            return {'message': message, 'duplicate': False}
+
     def post(self, payload, *, user_address=None):
         with self.uploads.lock:
             result = self._post(payload, user_address=user_address)
@@ -1055,6 +1082,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({'discarded': True})
             elif self.path == "/api/messages":
                 self._json(self.room.post(payload, user_address=self.client_address[0]))
+            elif self.path == '/api/participants/connected':
+                self._json(self.room.announce_connection(payload))
             elif self.path == '/api/settings/language':
                 try:
                     language = self.server.settings.set_language(

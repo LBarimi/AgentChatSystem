@@ -9,7 +9,7 @@ from tempfile import NamedTemporaryFile
 from urllib.parse import urlencode
 from relay.cli import RelayError
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, MCP_VERSION, WORK_TOOLS_INSTRUCTIONS
-from relay.settings import PROJECT
+from relay.settings import LANGUAGES, PROJECT
 from relay.uploads import MAX_FILES, MIME_TYPES
 from relay.storage import TEXT_BYTES
 
@@ -18,6 +18,22 @@ SHARED_PATH = {'type': 'string', 'maxLength': 512, 'description': 'Path relative
 BOARD_ID = {'type': 'integer', 'minimum': 1}
 
 TOOLS = [
+    {
+        'name': 'announce_connection',
+        'description': (
+            'Post a localized "Connected." notice under this agent\'s name in its own channel when the user starts listening. '
+            'Call once before the first receive, with a fresh UUID request_id for that listening run. '
+            'Reuse the same ID if the call fails or its result is uncertain. Do not announce again after timeouts, '
+            'completed tasks, or automatic reconnects. No received message is needed and no agent inbox is triggered.'
+        ),
+        'inputSchema': {
+            'type': 'object', 'additionalProperties': False, 'required': ['request_id'],
+            'properties': {
+                'request_id': {'type': 'string', 'format': 'uuid', 'minLength': 36, 'maxLength': 36},
+                'language': {'type': 'string', 'enum': list(LANGUAGES), 'default': 'en'},
+            },
+        },
+    },
     {
         "name": "receive",
         "description": (
@@ -214,7 +230,11 @@ def dispatch(client, agent, packet):
     if not isinstance(args, dict):
         raise RpcError(-32602, "Invalid tool arguments")
     try:
-        if name == "receive":
+        if name == 'announce_connection':
+            result = client.call('/api/participants/connected', {
+                'agent': agent, 'request_id': args.get('request_id'), 'language': args.get('language', 'en'),
+            })
+        elif name == "receive":
             channel_id = args.get('channel_id')
             if channel_id is not None and (not isinstance(channel_id, str) or not channel_id):
                 raise RpcError(-32602, 'Invalid channel ID')

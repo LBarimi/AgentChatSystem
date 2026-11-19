@@ -52,6 +52,10 @@ class SetupPrompts(unittest.TestCase):
                     self.assertIn('http://127.0.0.1:9092/api/health', prompt)
                     self.assertTrue(setup['prompt'].startswith('[AgentChatSystem:' + role + '-2]'))
                     self.assertIn('receive(seconds=40)', setup['prompt'])
+                    self.assertIn(f'language="{language}"', setup['prompt'])
+                    self.assertIn(prompt_catalog(language)['connected_notice'], setup['prompt'])
+                    self.assertLess(setup['prompt'].index('announce_connection('), setup['prompt'].index('receive(seconds='))
+                    self.assertNotIn('announce_connection(', prompt)
                     self.assertNotIn('[[attach_png:', prompt)
 
     def test_literal_arguments_survive_spaces_quotes_unicode_and_shell_metacharacters(self):
