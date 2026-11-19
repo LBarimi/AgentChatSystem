@@ -16,6 +16,7 @@ from time import monotonic, time_ns
 from urllib.parse import parse_qs, quote, urlsplit
 from uuid import UUID, uuid4
 
+from relay import managed_cli
 from relay.board import Board, prepare_post
 from relay.chat_files import ChatFiles, prepare_chat_files
 from relay.errors import ApiError
@@ -637,6 +638,7 @@ class Room:
 
     def snapshot(self, channel_id, *, viewer_address=None):
         with self.changed:
+            managed_local = loopback(viewer_address)
             channel = self._channel(channel_id) if channel_id is not None else None
             rows = self.db.execute(
                 f'SELECT {MESSAGE_FIELDS} FROM messages m WHERE channel_id=? ORDER BY id DESC LIMIT 100', (channel_id,)
@@ -646,8 +648,9 @@ class Room:
                 "board_revision": str(self.board_revision),
                 "channel": channel,
                 "channels": self.channels(),
-                "participants": self.participants(channel_id, local=loopback(viewer_address)) if channel else [],
-                "managed_local": loopback(viewer_address),
+                "participants": self.participants(channel_id, local=managed_local) if channel else [],
+                "managed_local": managed_local,
+                "cli_available": {role: bool(managed_cli.executable(role)) for role in ROLES} if managed_local else {},
                 "users": self.users.snapshot(channel_id),
                 "viewer": self.users.identity(viewer_address),
                 "archived_participants": self._archived_participants(rows),

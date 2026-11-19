@@ -1,4 +1,5 @@
 {
+  "managedCliInstallRequired": "{provider}-CLI erforderlich",
   "managedBrowse": "Durchsuchen",
   "managedSelectFolder": "Ordner auswählen",
   "managedFolderUp": "Übergeordneter Ordner",

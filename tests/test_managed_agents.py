@@ -129,6 +129,17 @@ class ManagedAgentsTest(unittest.TestCase):
         with self.assertRaises(ApiError):
             self.room.delete_channel(self.channel, allow_managed=False)
 
+    def test_uses_the_same_cli_lookup_for_local_buttons_and_creation(self):
+        parent = self.create('codex', 'Coordinator')
+        self.ready(parent)
+        with patch.object(managed_cli, 'executable', side_effect=lambda role: 'codex' if role == 'codex' else None):
+            self.assertEqual(self.room.snapshot(self.channel, viewer_address='127.0.0.1')['cli_available'],
+                             {'codex': True, 'claude': False})
+            self.assertEqual(self.room.snapshot(self.channel, viewer_address='192.168.1.10')['cli_available'], {})
+            with self.assertRaises(ApiError) as missing:
+                self.create('claude', 'Reviewer', parent)
+            self.assertEqual(missing.exception.key, 'managedCliMissing')
+
     def test_offers_login_only_after_an_auth_failure_and_retries_same_card(self):
         authenticated = False
         commands = []

@@ -134,11 +134,19 @@ function showMessage(id, message) {
   target.hidden = !message;
 }
 
+function missingCli(role) {
+  if (current?.cli_available?.[role] !== false) return null;
+  return { provider: role === "codex" ? "Codex" : "Claude Code" };
+}
+
 function refreshControls() {
   const ready = live && current;
   const hasChannel = Boolean(current?.channel);
-  el("add-agent").disabled = !ready || !hasChannel || !current.managed_local;
-  el("add-agent").title = current?.managed_local ? "" : t("managedLocalOnly");
+  const missingCodex = missingCli("codex");
+  const addAgent = el("add-agent");
+  addAgent.disabled = !ready || !hasChannel || !current.managed_local || Boolean(missingCodex);
+  el("add-agent-label").textContent = missingCodex ? t("managedCliInstallRequired", missingCodex) : t("managedCreate");
+  addAgent.title = missingCodex ? t("managedCliMissing", missingCodex) : current?.managed_local ? "" : t("managedLocalOnly");
   el("add-channel").disabled = !ready;
   el("empty-add-channel").disabled = !ready;
   el("board-toggle").disabled = !ready || !hasChannel;
@@ -287,11 +295,14 @@ function showParticipants() {
     if (current.managed_local) {
       const actions = element("div", "agent-team-actions");
       for (const role of ["codex", "claude"]) {
-        const action = element("button", "button secondary", t(role === "codex" ? "managedCodexChild" : "managedClaudeChild"));
+        const missing = missingCli(role);
+        const label = missing ? t("managedCliInstallRequired", missing) : t(role === "codex" ? "managedCodexChild" : "managedClaudeChild");
+        const action = element("button", "button secondary", label);
         action.type = "button";
         action.dataset.parent = parent.id;
         action.dataset.role = role;
-        action.disabled = !parent.resumable;
+        action.disabled = !parent.resumable || Boolean(missing);
+        if (missing) action.title = t("managedCliMissing", missing);
         actions.append(action);
       }
       section.append(actions);
@@ -413,7 +424,8 @@ function applyRoom(snapshot, repaint = false) {
   const boardChanged = current?.board_revision !== snapshot.board_revision;
   const lastParticipants = participantKey;
   participantKey = JSON.stringify(snapshot.participants.map(({ id, name, role, icon }) => [id, name, role, icon]));
-  const dirtyRoster = !current || JSON.stringify(snapshot.participants) !== JSON.stringify(current.participants);
+  const dirtyRoster = !current || JSON.stringify([snapshot.participants, snapshot.cli_available])
+    !== JSON.stringify([current.participants, current.cli_available]);
   const dirtyUsers = !current || JSON.stringify([snapshot.viewer, snapshot.users]) !== JSON.stringify([current.viewer, current.users]);
   current = snapshot;
   const channels = JSON.stringify([activeChannel, snapshot.channels]);

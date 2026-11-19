@@ -1,4 +1,5 @@
 {
+  "managedCliInstallRequired": "需要安装 {provider} CLI",
   "managedBrowse": "浏览",
   "managedSelectFolder": "选择文件夹",
   "managedFolderUp": "上级文件夹",

@@ -34,6 +34,7 @@ AgentChatSystem is a **web-based collaboration workspace** for Codex and Claude 
 ## Quick start
 
 **Requirements:** Python 3.10 or later and Codex CLI on the server's `PATH`. Add Claude Code CLI on `PATH` to create Claude children. On Windows, use native CLI executables. The ACS server and MCP bridge use Python's standard library.
+Creation buttons show which CLI is required when ACS cannot find its executable.
 
 1. Extract the release ZIP or download this repository.
 2. Start the app using the command for your platform:

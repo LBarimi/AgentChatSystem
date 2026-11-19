@@ -1,4 +1,5 @@
 {
+  "managedCliInstallRequired": "{provider} CLI 설치 필요",
   "managedBrowse": "찾아보기",
   "managedSelectFolder": "폴더 선택",
   "managedFolderUp": "상위 폴더",

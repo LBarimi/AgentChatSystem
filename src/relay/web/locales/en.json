@@ -1,4 +1,5 @@
 {
+  "managedCliInstallRequired": "{provider} CLI required",
   "managedBrowse": "Browse",
   "managedSelectFolder": "Choose a folder",
   "managedFolderUp": "Parent folder",

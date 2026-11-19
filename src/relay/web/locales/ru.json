@@ -1,4 +1,5 @@
 {
+  "managedCliInstallRequired": "Требуется CLI {provider}",
   "managedBrowse": "Обзор",
   "managedSelectFolder": "Выбрать папку",
   "managedFolderUp": "На уровень выше",

@@ -1,4 +1,5 @@
 {
+  "managedCliInstallRequired": "{provider} CLI のインストールが必要",
   "managedBrowse": "参照",
   "managedSelectFolder": "フォルダーを選択",
   "managedFolderUp": "親フォルダー",
