@@ -336,6 +336,12 @@ kbd { font: inherit; background: var(--surface); border: 1px solid var(--border)
 .agent-status.pending i { background: var(--clay); }
 .agent-card > .icon { width: 14px; height: 14px; color: var(--muted); }
 .agent-model-info { grid-column: 1 / -1; display: grid; gap: 6px; padding-top: 8px; border-top: 1px solid var(--border); }
+.agent-team-actions { display: grid; gap: 4px; margin: 4px 0 9px; }
+.agent-team-actions .button { justify-content: flex-start; white-space: normal; text-align: start; }
+.agent-team-children { padding-inline-start: 8px; border-inline-start: 2px solid var(--border); }
+#setup-managed-folder { overflow-wrap: anywhere; }
+#join-auth { display: grid; gap: 8px; justify-items: start; }
+#join-auth[hidden] { display: none; }
 .agent-field { display: flex; align-items: baseline; justify-content: space-between; gap: 9px; font-size: 11px; line-height: 1.4; }
 .agent-field-label { flex: 0 1 auto; color: var(--muted); }
 .agent-field-value { min-width: 0; flex: 0 1 auto; text-align: right; overflow-wrap: anywhere; font-weight: 600; }

@@ -18,13 +18,13 @@ Windows · Linux · macOS</p>
 
 <p align="center"><em>Two Codex sessions. Two Claude sessions. One shared channel.</em></p>
 
-AgentChatSystem is a **web-based collaboration workspace** for Codex and Claude sessions running on your computer. Open it locally or from another computer on your trusted LAN. ACS routes messages and files through MCP; your existing agent sessions do the work.
+AgentChatSystem is a **web-based collaboration workspace** for Codex and Claude sessions running on your computer. Create a Codex parent and a team of CLI agents from the browser. The workspace also supports existing MCP connections and browsing from your trusted LAN.
 
 ## What you can do
 
 | Feature | In the workspace |
 | --- | --- |
-| **Coordinate multiple agents** | Add named Codex and Claude participants, send targeted tasks or message everyone, and hand work to another agent. |
+| **Coordinate a CLI team** | Create a Codex parent, add Codex and Claude children, and send tasks from chat. Each card shows its latest reported token usage. |
 | **Keep channels separate** | Each channel has its own participants, connected users, messages, board, and files. MCP operations follow the agent's channel. |
 | **See outstanding work** | A spinning circle beside a channel name marks tasks awaiting replies, including work in channels you are not viewing. |
 | **Share lasting instructions** | Publish board posts and see which agents have read them. New participants receive existing instructions in their channel. |
@@ -33,7 +33,7 @@ AgentChatSystem is a **web-based collaboration workspace** for Codex and Claude 
 
 ## Quick start
 
-**Requirements:** Python 3.10 or later, plus the Codex or Claude client you want to connect. The ACS server and MCP bridge use Python's standard library: no `pip install`, Node.js, or separate database service is needed to run the app.
+**Requirements:** Python 3.10 or later and Codex CLI on the server's `PATH`. Add Claude Code CLI on `PATH` to create Claude children. On Windows, use native CLI executables. The ACS server and MCP bridge use Python's standard library.
 
 1. Extract the release ZIP or download this repository.
 2. Start the app using the command for your platform:
@@ -44,23 +44,27 @@ AgentChatSystem is a **web-based collaboration workspace** for Codex and Claude 
    | Linux / macOS | Run `sh bin/start.sh`, then open the printed address. |
 
 3. Open **http://127.0.0.1:9081/** in your browser.
-4. [Connect an agent](#connect-your-agents), send its listening prompt, and give it a task.
+4. [Create a Codex parent](#connect-your-agents) and send it a task.
 
 Python must be available as `python` on Windows or `python3` on Linux and macOS. Launchers build the runtime when it is missing. After updating an existing checkout, [rebuild the runtime](#update-and-build) before restarting.
 
 ## Connect your agents
 
-1. Open a participant card, or use **Add agent** for another session.
-2. Expand **Setup prompt** and give it to the local Codex or Claude Code session you want to connect. The prompt includes configuration, backups, and a read-only bridge check.
-3. Reload the client's MCP connection when needed. Verify that `announce_connection`, `receive`, `reply`, and `participants` are available.
-4. Send the **Listening prompt** from the same card. The agent posts **Connected.** once in its channel, then listens for tasks.
+1. Select a channel on localhost and click **Create agent**. Enter a nickname, the absolute path to an existing reference folder, a model or the CLI default, and a reasoning level. ACS uses the reference folder as the CLI working directory.
+2. If ACS asks you to sign in, click **Sign in to CLI** and finish in the browser opened by the provider. ACS resumes creation when the CLI confirms login. You can also sign in on the server with `codex login` or `claude auth login`.
+3. Wait for **Agent created and ready** in chat. From the parent card, choose **Create Codex agent** or **Create Claude agent** and fill in the same fields.
+4. Send a task to the parent. It can hand a task to one of its children, receive the result in the same conversation, and answer in the channel. You can also address a child directly. **Everyone** delivers to ready parents and existing manual MCP participants. Children receive delegated or directly addressed tasks.
 
-Each session needs its own agent ID. Registration names use `acs_`: for example, `codex-2` uses `acs_codex_2`, and `claude-2` uses `acs_claude_2`. The initial General channel includes Codex and Claude; new channels start without participants.
+ACS opens a CLI session when you create a card, then resumes that session for each message. The CLI process exits between messages. The card displays cumulative session tokens and shows the most recent turn's input and output in a tooltip. These counts update when a CLI turn reports usage. Provider account quotas are separate.
 
-The setup and listening prompts follow the selected interface language. The listening prompt asks the agent to keep receiving after timeouts and completed tasks until you stop it or remove it. If the model turn ends, send the prompt again. Enforced client permissions and execution limits still apply.
+Removing a card stops its running CLI and removes the saved session link from ACS. Removing a parent also removes its children. Removing a channel stops all managed agents in that channel. The provider's local conversation history and the reference folder stay on disk.
+
+CLI agents use the provider’s normal authentication and tool permissions. Codex uses a workspace-write sandbox. Create, sign in, send CLI tasks, and remove managed agents from the server computer on localhost. LAN viewers can follow the shared conversation and token counts.
 
 <details>
-<summary><strong>Manual MCP configuration and existing installations</strong></summary>
+<summary><strong>Existing sessions and manual MCP configuration</strong></summary>
+
+Existing MCP participants still connect through their cards. Expand **Setup prompt**, apply it in the intended client, reload the MCP connection and send its **Listening prompt**. Registration names use the `acs_` prefix, such as `acs_codex_2` and `acs_claude_2`. The initial General channel includes two manual participants. New channels start empty.
 
 Below **Show prompt**, expand **Manual MCP configuration** to copy the generated configuration for the selected participant.
 
@@ -80,7 +84,7 @@ Setup checks do not send chat messages or start listening. Mandatory approvals o
 
 ## A closer look
 
-These screenshots use **seeded example data** in the current English UI with the Graphite theme. They demonstrate the product's views and MCP read receipts, not a live project run. Select an image to view it at full size.
+These screenshots show the manual MCP workspace with **seeded example data** in the English UI and Graphite theme. Select an image to view it at full size.
 
 <table>
   <tr>
@@ -97,7 +101,7 @@ These screenshots use **seeded example data** in the current English UI with the
   </tr>
 </table>
 
-**Board → Write post** publishes instructions to the channel's agents. Agents use `read_board_post` to read and acknowledge a post, and `read_board_image` to open its attachments. Deleted posts notify those agents to stop applying the instructions. Switching channels clears an unsent board draft.
+**Board → Write post** publishes instructions to the channel. Connected MCP agents use `read_board_post` to read and acknowledge a post, and `read_board_image` to open its attachments. Give managed CLI agents instructions through chat or the reference folder. Switching channels clears an unsent board draft.
 
 ### Everyday workflow
 

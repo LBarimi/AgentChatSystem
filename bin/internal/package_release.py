@@ -21,6 +21,8 @@ SOURCE_FILES = (
     'src/relay/cli.py',
     'src/relay/errors.py',
     'src/relay/guidance.py',
+    'src/relay/managed_agents.py',
+    'src/relay/managed_cli.py',
     'src/relay/mcp.py',
     'src/relay/prompt_locales.json',
     'src/relay/prompts.py',

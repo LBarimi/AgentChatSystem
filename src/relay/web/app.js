@@ -27,6 +27,7 @@ let chatDraftId = null;
 let roomRequest = 0;
 let setupRequest = 0;
 let setupAgent = null;
+let joinContext = null;
 let iconDraft = null;
 let iconSaving = false;
 const participantIconLabels = {
@@ -98,11 +99,20 @@ function modelSettings(agent) {
   };
   const effort = settings.reasoning_effort;
   const fields = element("span", "agent-model-info");
-  fields.title = t("modelSettingsHint");
-  for (const [label, value] of [
-    [t("model"), settings.model || t("modelUnknown")],
+  if (!agent.managed) fields.title = t("modelSettingsHint");
+  const rows = [
+    [t("model"), settings.model || t(agent.managed ? "managedModelDefault" : "modelUnknown")],
     [t("reasoningEffort"), effort ? (effortKeys[effort] ? t(effortKeys[effort]) : effort) : t("modelUnknown")],
-  ]) {
+  ];
+  if (agent.managed) {
+    const format = new Intl.NumberFormat(document.documentElement.lang);
+    const usage = agent.usage;
+    rows.push([t("managedUsage"), usage ? t("managedTokenCount", {
+      count: format.format(usage.total),
+    }) : t("modelUnknown")]);
+    if (usage) fields.title = t("managedLastTurn", { input: format.format(usage.input), output: format.format(usage.output) });
+  }
+  for (const [label, value] of rows) {
     const field = element("span", "agent-field");
     field.append(element("span", "agent-field-label", label), element("span", "agent-field-value", value));
     fields.append(field);
@@ -119,7 +129,8 @@ function showMessage(id, message) {
 function refreshControls() {
   const ready = live && current;
   const hasChannel = Boolean(current?.channel);
-  el("add-agent").disabled = !ready || !hasChannel;
+  el("add-agent").disabled = !ready || !hasChannel || !current.managed_local;
+  el("add-agent").title = current?.managed_local ? "" : t("managedLocalOnly");
   el("add-channel").disabled = !ready;
   el("empty-add-channel").disabled = !ready;
   el("board-toggle").disabled = !ready || !hasChannel;
@@ -217,52 +228,86 @@ el("clear-chat-form").addEventListener("submit", async (event) => {
   }
 });
 
+const managedStates = { starting: "managedStarting", ready: "managedReady", busy: "managedBusy", failed: "managedFailed" };
+
+function participantCard(agent) {
+  const status = element("span", "agent-status");
+  const online = agent.waiting;
+  status.classList.toggle("waiting", online);
+  status.classList.toggle("pending", !online && agent.pending > 0);
+  const label = t(agent.managed ? managedStates[agent.state] : online ? "listening" : "idle");
+  status.append(element("i"), label + (agent.pending ? " · " + t("agentPending", { count: agent.pending }) : ""));
+  if (agent.error) status.title = t(agent.error);
+  const details = element("span", "agent-details");
+  const nameLine = element("span", "agent-name-line");
+  const name = element("strong", "", agent.name);
+  name.title = agent.name;
+  nameLine.append(name);
+  if (!online && !agent.managed) {
+    const disconnected = element("span", "agent-disconnected", t("agentDisconnected"));
+    disconnected.title = t("agentDisconnectedHint");
+    nameLine.append(disconnected);
+  }
+  details.append(nameLine, status);
+  const button = element("button", "agent-card");
+  button.type = "button";
+  button.dataset.agent = agent.id;
+  button.setAttribute("aria-label", agent.name + " · " + label);
+  button.append(participantAvatar(agent), details, icon("chevron-right"));
+  if (agent.managed || agent.role === "codex") button.append(modelSettings(agent));
+  return button;
+}
+
 function showParticipants() {
-  el("agent-count").textContent = current.participants.length;
-  const waiting = current.participants.filter((agent) => agent.waiting).length;
+  const agents = current.participants;
+  el("agent-count").textContent = agents.length;
+  const waiting = agents.filter((agent) => agent.waiting).length;
   el("agent-summary").textContent = t("waitingCount", { count: waiting });
 
   const roster = el("roster");
-  const focusId = roster.contains(document.activeElement) ? document.activeElement.dataset.agent : null;
+  const focus = roster.contains(document.activeElement) ? { ...document.activeElement.dataset } : {};
   const previousScroll = roster.scrollTop;
   const groups = [];
+  for (const parent of agents.filter((agent) => agent.managed && !agent.parent_id)) {
+    const section = element("section", "roster-group agent-team");
+    const heading = element("h3");
+    heading.append(providerIcon("codex"), element("span", "", t("managedParent")));
+    section.append(heading, participantCard(parent));
+    if (current.managed_local) {
+      const actions = element("div", "agent-team-actions");
+      for (const role of ["codex", "claude"]) {
+        const action = element("button", "button secondary", t(role === "codex" ? "managedCodexChild" : "managedClaudeChild"));
+        action.type = "button";
+        action.dataset.parent = parent.id;
+        action.dataset.role = role;
+        action.disabled = !parent.resumable;
+        actions.append(action);
+      }
+      section.append(actions);
+    }
+    const children = agents.filter((agent) => agent.parent_id === parent.id);
+    if (children.length) {
+      const list = element("div", "agent-team-children");
+      list.append(...children.map(participantCard));
+      section.append(list);
+    }
+    groups.push(section);
+  }
   for (const role of ["codex", "claude"]) {
-    const agents = current.participants.filter((agent) => agent.role === role);
+    const manual = agents.filter((agent) => !agent.managed && agent.role === role);
+    if (!manual.length) continue;
     const section = element("section", "roster-group");
     const heading = element("h3");
-    heading.append(providerIcon(role), element("span", "", roleName[role] + " · " + agents.length));
-    section.append(heading);
-    for (const agent of agents) {
-      const status = element("span", "agent-status");
-      const online = agent.waiting;
-      status.classList.toggle("waiting", online);
-      status.classList.toggle("pending", !online && agent.pending > 0);
-      const label = online ? t("listening") : t("idle");
-      status.append(element("i"), label + (agent.pending ? " · " + t("agentPending", { count: agent.pending }) : ""));
-      const details = element("span", "agent-details");
-      const nameLine = element("span", "agent-name-line");
-      const name = element("strong", "", agent.name);
-      name.title = agent.name;
-      nameLine.append(name);
-      if (!online) {
-        const disconnected = element("span", "agent-disconnected", t("agentDisconnected"));
-        disconnected.title = t("agentDisconnectedHint");
-        nameLine.append(disconnected);
-      }
-      details.append(nameLine, status);
-      const button = element("button", "agent-card");
-      button.type = "button";
-      button.dataset.agent = agent.id;
-      button.setAttribute("aria-label", t("agentSetup", { name: agent.name }) + (online ? "" : " " + t("agentDisconnected")));
-      button.append(participantAvatar(agent), details, icon("chevron-right"));
-      if (role === "codex") button.append(modelSettings(agent));
-      section.append(button);
-    }
+    heading.append(providerIcon(role), element("span", "", roleName[role] + " · " + manual.length));
+    section.append(heading, ...manual.map(participantCard));
     groups.push(section);
   }
   roster.replaceChildren(...groups);
   roster.scrollTop = previousScroll;
-  if (focusId) roster.querySelector('[data-agent="' + CSS.escape(focusId) + '"]')?.focus({ preventScroll: true });
+  const focusButton = [...roster.querySelectorAll("button")].find(({ dataset }) =>
+    (focus.agent && dataset.agent === focus.agent) ||
+    (focus.parent && dataset.parent === focus.parent && dataset.role === focus.role));
+  focusButton?.focus({ preventScroll: true });
 }
 
 function showUsers() {
@@ -366,6 +411,10 @@ function applyRoom(snapshot, repaint = false) {
     channelKey = channels;
   }
   if (repaint || dirtyRoster) showParticipants();
+  if (setupDialog.open && setupAgent && (dirtyRoster || repaint)) {
+    const managed = snapshot.participants.find((agent) => agent.id === setupAgent && agent.managed);
+    if (managed) renderManagedSetup(managed);
+  }
   if (repaint || dirtyUsers) showUsers();
   if (repaint || lastParticipants !== participantKey) showRecipients();
 
@@ -874,6 +923,16 @@ function renderSetupPrompts(setup, language) {
   const name = current?.participants.find((agent) => agent.id === setup.id)?.name || setup.name;
   el("setup-title").textContent = t("connectAgent", { name });
   el("setup-id").textContent = roleName[setup.role] + " · " + setup.id;
+  el("setup-managed").hidden = !setup.managed;
+  el("setup-listening").hidden = setup.managed;
+  el("setup-delete").disabled = setup.managed && !current?.managed_local;
+  if (setup.managed) {
+    el("setup-title").textContent = name;
+    el("setup-install").hidden = true;
+    renderManagedSetup(current?.participants.find((agent) => agent.id === setup.id) || setup);
+    setupDialog.removeAttribute("aria-busy");
+    return;
+  }
   el("setup-language").textContent = t("promptLanguage", { language: languageSelect.selectedOptions[0]?.textContent || language });
   el("setup-install").hidden = !setup.install_prompt;
   el("setup-install-prompt").textContent = setup.install_prompt || "";
@@ -885,6 +944,11 @@ function renderSetupPrompts(setup, language) {
   for (const id of ["setup-prompt", "setup-install-prompt", "setup-config"]) el(id).lang = language;
   for (const button of setupDialog.querySelectorAll("[data-copy]")) button.disabled = false;
   setupDialog.removeAttribute("aria-busy");
+}
+
+function renderManagedSetup(agent) {
+  el("setup-managed-folder").textContent = agent.cwd || t("managedLocalOnly");
+  el("setup-managed-status").textContent = t(agent.error || managedStates[agent.state] || "managedStarting");
 }
 
 async function openSetup(agentId, refreshOnly = false) {
@@ -922,6 +986,12 @@ async function openSetup(agentId, refreshOnly = false) {
 el("setup-prompts-retry").addEventListener("click", () => openSetup(setupAgent, true));
 
 el("roster").addEventListener("click", async (event) => {
+  const action = event.target.closest("[data-parent]");
+  if (action) {
+    const parent = current?.participants.find((agent) => agent.id === action.dataset.parent);
+    if (parent) openAgentCreation(action.dataset.role, parent);
+    return;
+  }
   const card = event.target.closest("[data-agent]");
   if (!card) return;
   try {
@@ -932,34 +1002,80 @@ el("roster").addEventListener("click", async (event) => {
   }
 });
 
-el("add-agent").addEventListener("click", () => {
+function openAgentCreation(role, parent) {
   el("join-form").reset();
+  joinContext = { role, parent_id: parent?.id ?? null, channel_id: activeChannel };
+  el("join-title").textContent = t(parent ? (role === "codex" ? "managedCodexChild" : "managedClaudeChild") : "managedCreateParent");
+  el("join-cwd").value = parent?.cwd || "";
+  const models = role === "codex" ? ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex"] : ["sonnet", "opus", "haiku"];
+  el("join-models").replaceChildren(...models.map((model) => new Option(model, model)));
+  const efforts = [["low", "reasoningLow"], ["medium", "reasoningMedium"], ["high", "reasoningHigh"], ["xhigh", "reasoningXhigh"]];
+  if (role === "claude") efforts.push(["max", "reasoningMax"]);
+  el("join-effort").replaceChildren(...efforts.map(([value, label]) => new Option(t(label), value)));
+  el("join-effort").value = "medium";
+  el("join-auth").hidden = true;
+  el("join-login").disabled = false;
+  el("join-submit").disabled = false;
+  el("join-auth-status").textContent = "";
   showMessage("join-error", "");
   joinDialog.showModal();
   el("join-name").focus();
+}
+el("add-agent").addEventListener("click", () => openAgentCreation("codex"));
+joinDialog.addEventListener("close", () => { if (!joinDialog.open) joinContext = null; });
+
+el("join-login").addEventListener("click", async () => {
+  const context = joinContext;
+  if (!context) return;
+  el("join-login").disabled = el("join-submit").disabled = true;
+  showMessage("join-error", "");
+  el("join-auth-status").textContent = t("managedAuthPending");
+  try {
+    await request("/api/managed/auth", { role: context.role });
+    while (joinDialog.open && joinContext === context) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      if (!joinDialog.open || joinContext !== context) break;
+      const { state } = await request("/api/managed/auth?" + new URLSearchParams({ role: context.role }));
+      if (state === "pending") continue;
+      el("join-auth-status").textContent = t(state === "ready" ? "managedAuthReady" : "managedAuthFailed");
+      if (state === "ready") {
+        el("join-submit").disabled = false;
+        // Release the login controls before the new submit handler takes ownership.
+        setTimeout(() => {
+          if (joinDialog.open && joinContext === context) el("join-form").requestSubmit();
+        }, 0);
+      }
+      break;
+    }
+  } catch (error) {
+    if (joinContext === context) showMessage("join-error", error.message);
+  } finally {
+    if (joinContext === context) el("join-login").disabled = el("join-submit").disabled = false;
+  }
 });
+
 el("join-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = el("join-submit");
-  if (button.disabled) return;
+  const context = joinContext;
+  if (button.disabled || !context) return;
   button.disabled = true;
   showMessage("join-error", "");
-  let agent;
-  const channelId = activeChannel;
   try {
-    agent = await request("/api/participants", { role: el("join-role").value, name: el("join-name").value, channel_id: channelId });
+    await request("/api/managed/agents", {
+      ...context, name: el("join-name").value, cwd: el("join-cwd").value.trim(),
+      model: el("join-model").value.trim(), effort: el("join-effort").value, language: document.documentElement.lang,
+    });
+    if (joinContext === context) joinDialog.close();
+    if (activeChannel === context.channel_id) loadRoom();
   } catch (error) {
-    showMessage("join-error", error.message);
+    if (joinContext === context) {
+      showMessage("join-error", error.message);
+      el("join-auth").hidden = error.key !== "managedAuthRequired";
+      if (!el("join-auth").hidden) el("join-login").focus();
+    }
   } finally {
-    button.disabled = false;
-  }
-  if (!agent || activeChannel !== channelId) return;
-  joinDialog.close();
-  try {
-    await openSetup(agent.id);
-  } catch (error) {
-    showMessage("form-error", error.message);
-    showSidePanel("agents", false);
+    if (joinContext === context) button.disabled = false;
   }
 });
 
@@ -973,7 +1089,8 @@ el("rename-form").addEventListener("submit", async (event) => {
   try {
     const agent = await request("/api/participants/rename", { id, name: el("agent-name").value, channel_id: activeChannel });
     if (setupAgent === id) {
-      el("setup-title").textContent = t("connectAgent", { name: agent.name });
+      el("setup-title").textContent = current?.participants.find((item) => item.id === id)?.managed
+        ? agent.name : t("connectAgent", { name: agent.name });
       el("agent-name").value = agent.name;
       el("setup-feedback").textContent = t("nicknameSaved");
     }
@@ -987,8 +1104,11 @@ el("rename-form").addEventListener("submit", async (event) => {
 el("setup-delete").addEventListener("click", () => {
   if (!setupAgent) return;
   agentDeleteDialog.dataset.agentId = setupAgent;
-  const name = current?.participants.find((agent) => agent.id === setupAgent)?.name || setupAgent;
+  const agent = current?.participants.find((agent) => agent.id === setupAgent);
+  const name = agent?.name || setupAgent;
   el("agent-delete-name").textContent = name + " (" + setupAgent + ")";
+  el("agent-delete-explanation").textContent = t(agent?.managed
+    ? (agent.parent_id ? "managedDeleteChild" : "managedDeleteParent") : "deleteAgentConfirm");
   showMessage("agent-delete-error", "");
   agentDeleteDialog.showModal();
 });

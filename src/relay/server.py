@@ -8,9 +8,10 @@ from socketserver import TCPServer
 import json
 import os
 import re
+import signal
 import sqlite3
 import sys
-from threading import Condition, Lock
+from threading import Condition, Lock, current_thread, main_thread
 from time import monotonic, time_ns
 from urllib.parse import parse_qs, quote, urlsplit
 from uuid import UUID, uuid4
@@ -18,6 +19,7 @@ from uuid import UUID, uuid4
 from relay.board import Board, prepare_post
 from relay.chat_files import ChatFiles, prepare_chat_files
 from relay.errors import ApiError
+from relay.managed_agents import ManagedAgents
 from relay.storage import ChannelStorage, StorageError, TEXT_BYTES
 from relay.uploads import MAX_FILES, MAX_FILE_BYTES, MAX_UPLOAD_REQUEST, UploadError, UploadStore, file_data, prepare_files, upload_policy, validate_file
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, LEGACY_MAX_WAIT_SECONDS, MCP_VERSION, LEGACY_PNG_PROMPT
@@ -52,6 +54,13 @@ def local_address(value):
     except ValueError:
         return False
     return address.version == 4 and (address.is_loopback or any(address in network for network in LAN_NETWORKS))
+
+
+def loopback(value):
+    try:
+        return isinstance(value, str) and ip_address(value).is_loopback
+    except ValueError:
+        return False
 
 
 class Room:
@@ -151,6 +160,7 @@ class Room:
         self.dirty_boards = set()
         self._migrate_channel_scope()
         self.participant_details = ParticipantDetails(self)
+        self.managed = ManagedAgents(self, db_path.parent, PENDING_MESSAGES)
         for channel in self.channels():
             try:
                 self.storage.folder(Path(channel['folder']), 'shared')
@@ -319,14 +329,17 @@ class Room:
             self._notify()
             return self._channel(channel_id)
 
-    def clear_channel(self, channel_id):
+    def clear_channel(self, channel_id, *, allow_managed=True):
         with self.folder_lock:
             with self.changed:
                 channel = self._channel(channel_id)
+                self._check_managed_channel(channel_id, allow_managed)
                 target = self.storage.log_path(Path(channel['folder']))
                 with self.db:
                     count = self._delete_channel_messages(channel_id)
                     self.storage.log(target, (), replace=True)
+                    self.managed.cancel_channel(channel_id)
+                    self.managed.cancel_channel(channel_id)
                 self._notify()
                 return {'channel_id': channel_id, 'cleared': count}
 
@@ -345,13 +358,23 @@ class Room:
             self._notify()
             return self._channel(channel_id)
 
-    def delete_channel(self, channel_id):
+    def _check_managed_channel(self, channel_id, allow_managed):
+        if not allow_managed and self.db.execute("""
+            SELECT 1 FROM managed_agents a JOIN participants p ON p.id=a.id WHERE p.channel_id=? LIMIT 1
+        """, (channel_id,)).fetchone():
+            raise RequestError('Manage CLI agents on the server computer.', 403, key='managedLocalOnly')
+
+    def delete_channel(self, channel_id, *, allow_managed=True):
         with self.folder_lock:
             with self.changed:
                 channel = self._channel(channel_id)
+                self._check_managed_channel(channel_id, allow_managed)
                 target = self.storage.log_path(Path(channel['folder']))
                 try:
                     with self.db:
+                        self.managed.delete([row['id'] for row in self.db.execute(
+                            'SELECT id FROM participants WHERE channel_id=?', (channel_id,),
+                        )])
                         count = self._delete_channel_messages(channel_id)
                         self.db.execute("""UPDATE board_posts SET title='',body='',
                             deleted_at=COALESCE(deleted_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE channel_id=?""", (channel_id,))
@@ -459,28 +482,32 @@ class Room:
             raise RequestError('이미 사용 중인 이름입니다.', 409, key='errorNameUsed')
 
     def register(self, payload):
+        with self.changed:
+            with self.db:
+                agent = self._register(payload)
+            self._notify_board()
+            self._write_board(agent['channel_id'])
+            return agent
+
+    def _register(self, payload):
         role = payload.get('role')
         if role not in ROLES:
             raise RequestError('Codex 또는 Claude를 선택하세요.', key='errorRole')
         name = self._name(payload.get('name'), '닉네임', 'errorNickname')
-        with self.changed:
-            channel_id = self.channel_scope(payload.get('channel_id'))
-            existing = self.db.execute('SELECT * FROM participants').fetchall()
-            active = [row for row in existing if row['removed_at'] is None and row['channel_id'] == channel_id]
-            self._check_name(name, active)
-            if len(active) >= MAX_PARTICIPANTS:
-                raise RequestError('에이전트는 64개까지 등록할 수 있습니다.', 409, key='errorAgentLimit')
-            role_ids = {row['id'] for row in existing if row['role'] == role}
-            number = 2
-            while f'{role}-{number}' in role_ids:
-                number += 1
-            agent_id = f'{role}-{number}'
-            with self.db:
-                self.db.execute('INSERT INTO participants(id,role,name,channel_id) VALUES (?,?,?,?)', (agent_id, role, name, channel_id))
-                self.db.execute('INSERT INTO board_delivery(post_id,agent_id) SELECT id,? FROM board_posts WHERE channel_id=? AND deleted_at IS NULL', (agent_id, channel_id))
-            self._notify_board()
-            self._write_board(channel_id)
-            return {'id': agent_id, 'role': role, 'name': name, 'icon': 'provider', 'channel_id': channel_id}
+        channel_id = self.channel_scope(payload.get('channel_id'))
+        existing = self.db.execute('SELECT * FROM participants').fetchall()
+        active = [row for row in existing if row['removed_at'] is None and row['channel_id'] == channel_id]
+        self._check_name(name, active)
+        if len(active) >= MAX_PARTICIPANTS:
+            raise RequestError('에이전트는 64개까지 등록할 수 있습니다.', 409, key='errorAgentLimit')
+        role_ids = {row['id'] for row in existing if row['role'] == role}
+        number = 2
+        while f'{role}-{number}' in role_ids:
+            number += 1
+        agent_id = f'{role}-{number}'
+        self.db.execute('INSERT INTO participants(id,role,name,channel_id) VALUES (?,?,?,?)', (agent_id, role, name, channel_id))
+        self.db.execute('INSERT INTO board_delivery(post_id,agent_id) SELECT id,? FROM board_posts WHERE channel_id=? AND deleted_at IS NULL', (agent_id, channel_id))
+        return {'id': agent_id, 'role': role, 'name': name, 'icon': 'provider', 'channel_id': channel_id}
 
     def rename(self, payload):
         agent_id = payload.get('id')
@@ -497,18 +524,28 @@ class Room:
             self._write_board(channel_id)
             return dict(participant) | {'name': name}
 
-    def remove_participant(self, agent_id, channel_id=None):
+    def remove_participant(self, agent_id, channel_id=None, *, allow_managed=True):
         with self.changed:
             channel_id = self.channel_scope(channel_id, agent_id, include_removed=True)
             participant = self._participant(agent_id, include_removed=True)
             if participant is None:
                 raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
             if participant['removed_at'] is None:
+                managed = self.managed.get(agent_id)
+                if managed and not allow_managed:
+                    raise RequestError('Manage CLI agents on the server computer.', 403, key='managedLocalOnly')
+                ids = [agent_id]
+                if managed:
+                    ids.extend(row['id'] for row in self.db.execute(
+                        'SELECT id FROM managed_agents WHERE parent_id=?', (agent_id,),
+                    ))
                 with self.db:
-                    self.db.execute("""
+                    self.managed.delete(ids)
+                    self.db.executemany("""
                         UPDATE participants SET removed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id=?
-                    """, (agent_id,))
-                    self.board.drop_pending(agent_id)
+                    """, ((aid,) for aid in ids))
+                    for aid in ids:
+                        self.board.drop_pending(aid)
                 self._notify_board()
                 self._write_board(channel_id)
             return {'id': agent_id, 'removed': True}
@@ -561,13 +598,15 @@ class Room:
             participant = self._participant(agent_id)
             if participant is None:
                 raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
+            managed = bool(self.managed.get(agent_id))
             return {
-                **dict(participant), **connection_setup(port, agent_id, participant['role'], language=language, channel_id=channel_id),
-                'icon_options': PARTICIPANT_ICONS,
+                **dict(participant),
+                **({} if managed else connection_setup(port, agent_id, participant['role'], language=language, channel_id=channel_id)),
+                'managed': managed, 'icon_options': PARTICIPANT_ICONS,
                 'icon_upload_extensions': ['.png', '.jpg', '.gif'],
             }
 
-    def participants(self, channel_id=None, agent=None):
+    def participants(self, channel_id=None, agent=None, *, local=False):
         with self.changed:
             channel_id = self.channel_scope(channel_id, agent)
             scope = 'AND m.channel_id=?'
@@ -581,6 +620,7 @@ class Room:
                     ),
                     'pending': pending.get(p['id'], 0),
                     **({'model_settings': self.participant_details.values.get(p['id'], {})} if p['role'] == 'codex' else {}),
+                    **(self.managed.public(managed, local=local) if (managed := self.managed.get(p['id'])) else {}),
                 }
                 for p in participants
             ]
@@ -605,7 +645,8 @@ class Room:
                 "board_revision": str(self.board_revision),
                 "channel": channel,
                 "channels": self.channels(),
-                "participants": self.participants(channel_id) if channel else [],
+                "participants": self.participants(channel_id, local=loopback(viewer_address)) if channel else [],
+                "managed_local": loopback(viewer_address),
                 "users": self.users.snapshot(channel_id),
                 "viewer": self.users.identity(viewer_address),
                 "archived_participants": self._archived_participants(rows),
@@ -613,7 +654,8 @@ class Room:
                 "messages": self.chat_files.attach_metadata(reversed(rows)),
             }
 
-    def _insert(self, channel_id, sender, recipient, body, reply_to=None, *, files=(), request_id=None, user=None):
+    def _insert(self, channel_id, sender, recipient, body, reply_to=None, *, files=(), request_id=None, user=None,
+                deliver_managed=False):
         user = user or {}
         cursor = self.db.execute(
             "INSERT INTO messages(channel_id,sender,recipient,body,reply_to,remaining,request_id,user_ip,user_name) VALUES(?,?,?,?,?,0,?,?,?)",
@@ -621,7 +663,12 @@ class Room:
         )
         message_id = cursor.lastrowid
         if recipient == 'all':
-            self.db.execute('INSERT INTO deliveries(message_id,agent_id) SELECT ?, id FROM participants WHERE removed_at IS NULL AND channel_id=?', (message_id, channel_id))
+            self.db.execute("""
+                INSERT INTO deliveries(message_id,agent_id)
+                SELECT ?,p.id FROM participants p LEFT JOIN managed_agents a ON a.id=p.id
+                WHERE p.removed_at IS NULL AND p.channel_id=? AND
+                      (a.id IS NULL OR (? AND a.parent_id IS NULL AND a.session IS NOT NULL))
+            """, (message_id, channel_id, deliver_managed))
         elif recipient is not None:
             self.db.execute('INSERT INTO deliveries(message_id,agent_id) VALUES (?,?)', (message_id, recipient))
         if files:
@@ -643,6 +690,8 @@ class Room:
         agent = payload.get('agent') or ''
         with self.changed:
             channel_id = self.channel_scope(payload.get('channel_id'), agent)
+            if self.managed.get(agent):
+                raise RequestError('ACS connects managed agents.', 403, key='managedLocalOnly')
             existing = self.db.execute(f'SELECT {MESSAGE_FIELDS} FROM messages m WHERE request_id=?', (request_id,)).fetchone()
             if existing:
                 if (existing['channel_id'] != channel_id or existing['sender'] != agent
@@ -675,6 +724,7 @@ class Room:
             if sender == "user":
                 channel_id = self._channel(payload.get('channel_id', DEFAULT_CHANNEL))['id']
                 recipient = payload.get("recipient")
+                is_local = loopback(user_address)
                 request_id = payload.get('request_id')
                 if request_id is not None:
                     try:
@@ -690,15 +740,26 @@ class Room:
                             raise RequestError('전송 요청 ID가 이미 사용 중입니다.', 409, key='errorRequestUsed')
                         return {"message": self.chat_files.attach_metadata((existing,))[0], "duplicate": True}
                 if recipient == 'all':
-                    if self.db.execute('SELECT 1 FROM participants WHERE removed_at IS NULL AND channel_id=? LIMIT 1', (channel_id,)).fetchone() is None:
+                    if not self.db.execute("""
+                        SELECT 1 FROM participants p LEFT JOIN managed_agents a ON a.id=p.id
+                        WHERE p.removed_at IS NULL AND p.channel_id=? AND
+                              (a.id IS NULL OR (? AND a.parent_id IS NULL AND a.session IS NOT NULL)) LIMIT 1
+                    """, (channel_id, is_local)).fetchone():
                         raise RequestError('메시지를 받을 에이전트를 먼저 추가하세요.', 409, key='errorAddAgentFirst')
                 elif self._participant(recipient) is None or self._participant(recipient)['channel_id'] != channel_id:
                     raise RequestError('보낼 대상을 선택하세요.', key='errorChooseRecipient')
+                elif managed := self.managed.get(recipient):
+                    if not is_local:
+                        raise RequestError('Send CLI tasks from the server computer.', 403, key='managedLocalOnly')
+                    if not managed['session']:
+                        raise RequestError('Wait until the CLI agent is ready.', 409, key='managedNotReady')
                 files = prepare_chat_files(attachments, self.uploads)
                 with self.db:
                     message = self._insert(channel_id, sender, recipient, body.strip(), files=files, request_id=request_id,
-                                           user=self.users.identity(user_address))
+                                           user=self.users.identity(user_address), deliver_managed=is_local)
             elif self._participant(sender) is not None:
+                if self.managed.get(sender):
+                    raise RequestError('ACS sends replies for managed agents.', 403, key='managedLocalOnly')
                 reply_to = payload.get("reply_to")
                 handoff = payload.get("handoff", True)
                 if type(reply_to) is not int or not 1 <= reply_to <= 2**63 - 1 or type(handoff) is not bool:
@@ -720,6 +781,8 @@ class Room:
                 body, shared_files = self._shared_png_reply(channel_id, body, len(files))
                 files.extend(shared_files)
                 recipient = payload.get('next_agent') if handoff else None
+                if isinstance(recipient, str) and self.managed.get(recipient):
+                    raise RequestError('Send CLI tasks from the server computer.', 403, key='managedLocalOnly')
                 if recipient is not None and (recipient == sender or self._participant(recipient) is None
                                               or self._participant(recipient)['channel_id'] != channel_id):
                     raise RequestError('다른 등록 에이전트를 수신자로 선택하세요.', 409)
@@ -785,6 +848,8 @@ class Room:
                 raise RequestError('먼저 에이전트를 등록하세요.', 404)
             if participant['removed_at'] is not None:
                 return {'state': 'removed'}
+            if self.managed.get(agent):
+                raise RequestError('ACS receives messages for managed agents.', 403, key='managedLocalOnly')
             channel_id = self.channel_scope(channel_id, agent)
             scope = 'AND m.channel_id=?'
             params = (agent, channel_id)
@@ -868,6 +933,10 @@ class Handler(BaseHTTPRequestHandler):
         if files_write and not ip_address(self.client_address[0]).is_loopback:
             raise RequestError('파일 저장과 서버 폴더 설정은 서버 PC에서만 변경할 수 있습니다.',
                                403, key='errorFilesLocalOnly')
+
+    def _check_managed_local(self):
+        if not loopback(self.client_address[0]):
+            raise RequestError('Manage CLI agents on the server computer.', 403, key='managedLocalOnly')
 
     def _bytes(self, status, data, content_type, *, download_name=None):
         self.send_response(status)
@@ -1014,6 +1083,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.room.setup(agent_id, self.server.server_port, language, channel_id))
             elif url.path == '/api/participants':
                 self._json({'participants': self.room.participants(channel_id, agent)})
+            elif url.path == '/api/managed/auth':
+                self._check_managed_local()
+                self._json(self.room.managed.login_status(params.get('role', [''])[0]))
             elif url.path == '/api/participants/icon':
                 image = self.room.participant_icon(params.get('agent', [''])[0], params.get('v', [''])[0], channel_id)
                 self._bytes(200, image['data'], image['mime_type'])
@@ -1107,24 +1179,32 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.room.read_board_post(payload.get('post_id'), payload.get('agent') or '', payload.get('channel_id')))
             elif self.path == '/api/participants':
                 self._json(self.room.register(payload), 201)
+            elif self.path == '/api/managed/agents':
+                self._check_managed_local()
+                language = payload.get('language')
+                self._json(self.room.managed.create(payload, language if language in LANGUAGES else 'en'), 202)
+            elif self.path == '/api/managed/auth':
+                self._check_managed_local()
+                self._json(self.room.managed.login(payload.get('role')), 202)
             elif self.path == '/api/participants/rename':
                 self._json(self.room.rename(payload))
             elif self.path == '/api/participants/icon':
                 self._json(self.room.set_participant_icon(payload))
             elif self.path == '/api/participants/delete':
-                self._json(self.room.remove_participant(payload.get('id'), payload.get('channel_id')))
+                self._json(self.room.remove_participant(payload.get('id'), payload.get('channel_id'),
+                                                        allow_managed=loopback(self.client_address[0])))
             elif self.path == '/api/channels':
                 self._json(self.room.create_channel(payload), 201)
             elif self.path == '/api/channels/rename':
                 self._json(self.room.rename_channel(payload))
             elif self.path == '/api/channels/delete':
-                self._json(self.room.delete_channel(payload.get('channel_id')))
+                self._json(self.room.delete_channel(payload.get('channel_id'), allow_managed=loopback(self.client_address[0])))
             elif self.path == '/api/channels/open':
                 self._json(self.room.storage_action('open', payload))
             elif self.path == '/api/channels/folder':
                 self._json(self.room.set_folder(payload))
             elif self.path == '/api/channels/clear':
-                self._json(self.room.clear_channel(payload.get('channel_id')))
+                self._json(self.room.clear_channel(payload.get('channel_id'), allow_managed=loopback(self.client_address[0])))
             elif self.path in ('/api/shared/list', '/api/shared/read', '/api/shared/write'):
                 self._json(self.room.storage_action(self.path.rsplit('/', 1)[1], payload))
             else:
@@ -1149,12 +1229,20 @@ def serve(port, db_path, *, settings=None):
     with LocalHTTPServer((LISTEN_HOST, port), Handler) as server:
         server.settings = settings if settings is not None else Settings()
         server.room = Room(db_path)
+        server.room.managed.start()
         server.room.participant_details.start()
         print(f"{APP_NAME}: http://{LOOPBACK}:{server.server_port}/", flush=True)
         print(f"LAN: http://<this computer's LAN IPv4 address>:{server.server_port}/", flush=True)
+        def terminate(_signal, _frame):
+            raise KeyboardInterrupt
+
+        previous = signal.signal(signal.SIGTERM, terminate) if current_thread() is main_thread() else None
         try:
             server.serve_forever()
         except KeyboardInterrupt:
             pass
         finally:
+            if previous is not None:
+                signal.signal(signal.SIGTERM, previous)
             server.room.participant_details.stopped.set()
+            server.room.managed.close()

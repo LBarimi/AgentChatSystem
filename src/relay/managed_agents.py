@@ -1,0 +1,362 @@
+"""ACS-owned conversations and their delivery workers."""
+import json
+from functools import lru_cache
+from importlib.resources import files
+from pathlib import Path
+import re
+import subprocess
+from tempfile import TemporaryDirectory
+from threading import Thread
+
+from relay.errors import ApiError
+from relay import managed_cli
+
+
+EFFORTS = {
+    'codex': ('low', 'medium', 'high', 'xhigh'),
+    'claude': ('low', 'medium', 'high', 'xhigh', 'max'),
+}
+PARENT_SCHEMA = {
+    'type': 'object',
+    'properties': {
+        'message': {'type': 'string'},
+        'child_id': {'type': ['string', 'null']},
+    },
+    'required': ['message', 'child_id'],
+    'additionalProperties': False,
+}
+MAX_HANDOFFS = 2
+
+
+@lru_cache(maxsize=7)
+def catalog(language):
+    return json.loads(files('relay.web').joinpath('locales', language + '.json').read_text(encoding='utf-8'))
+
+
+class ManagedAgents:
+    def __init__(self, room, data_dir, pending_sql):
+        self.room = room
+        self.db = room.db
+        self.data_dir = data_dir
+        self.pending_sql = pending_sql
+        self.processes = {}
+        self.logins = {}
+        self.login_states = {}
+        self.threads = {}
+        self.closed = False
+        self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS managed_agents (
+                id TEXT PRIMARY KEY REFERENCES participants(id),
+                parent_id TEXT REFERENCES managed_agents(id),
+                cwd TEXT NOT NULL,
+                model TEXT NOT NULL,
+                effort TEXT NOT NULL,
+                language TEXT NOT NULL,
+                session TEXT,
+                usage TEXT,
+                active_message INTEGER,
+                error TEXT
+            );
+            CREATE INDEX IF NOT EXISTS managed_parent ON managed_agents(parent_id);
+        """)
+
+    def get(self, agent_id):
+        return self.db.execute("""
+            SELECT a.*,p.role,p.name,p.channel_id FROM managed_agents a
+            JOIN participants p ON a.id=p.id WHERE a.id=? AND p.removed_at IS NULL
+        """, (agent_id,)).fetchone()
+
+    def login(self, role):
+        args = managed_cli.auth_command(role, 'login')
+        with self.room.changed:
+            if self.closed:
+                raise ApiError('ACS is stopping.', 503, key='errorUnavailable')
+            if role in self.logins:
+                return {'state': 'pending'}
+            try:
+                turn = managed_cli.Turn(args, None)
+            except OSError as error:
+                raise ApiError('Could not start CLI login.', 503, key='managedAuthFailed') from error
+            self.logins[role] = turn
+            self.login_states[role] = 'pending'
+            self.threads['login-' + role] = Thread(
+                target=self._login, args=(role, turn), name='acs-login-' + role, daemon=True,
+            )
+            self.threads['login-' + role].start()
+            return {'state': 'pending'}
+
+    def login_status(self, role):
+        if role not in EFFORTS:
+            raise ApiError('Choose Codex or Claude.', key='errorRole')
+        with self.room.changed:
+            return {'state': self.login_states.get(role, 'idle')}
+
+    def _login(self, role, turn):
+        state = 'failed'
+        try:
+            turn.read('', timeout=300)
+            managed_cli.require_login(role)
+            state = 'ready'
+        except (OSError, subprocess.TimeoutExpired, managed_cli.CliError, ApiError):
+            pass
+        finally:
+            with self.room.changed:
+                turn.stop()
+                self.logins.pop(role, None)
+                self.login_states[role] = state
+                self.threads.pop('login-' + role, None)
+            turn.reap()
+
+    def create(self, payload, language):
+        parent_id = payload.get('parent_id')
+        role = payload.get('role')
+        if not isinstance(role, str) or role not in EFFORTS or (parent_id is None and role != 'codex'):
+            raise ApiError('Choose a supported agent type.', key='errorRole')
+        if parent_id is not None and (not isinstance(parent_id, str) or len(parent_id) > 32):
+            raise ApiError('Choose a Codex parent in this channel.', key='managedParentMissing')
+        raw_path = payload.get('cwd')
+        try:
+            if not isinstance(raw_path, str) or not raw_path or '\0' in raw_path or not Path(raw_path).is_absolute():
+                raise ValueError
+            cwd = Path(raw_path).resolve(strict=True)
+            if not cwd.is_dir():
+                raise ValueError
+        except (OSError, RuntimeError, ValueError):
+            raise ApiError('Enter an existing absolute folder path.', key='managedFolderInvalid') from None
+        model = payload.get('model', '')
+        if not isinstance(model, str) or (model and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.::_/-]{0,127}', model)):
+            raise ApiError('Enter a model ID or choose the CLI default.', key='managedModelInvalid')
+        effort = payload.get('effort')
+        if effort not in EFFORTS[role]:
+            raise ApiError('Choose a supported reasoning level.', key='managedEffortInvalid')
+        with self.room.changed:
+            if self.closed:
+                raise ApiError('ACS is stopping.', 503, key='errorUnavailable')
+            channel_id = self.room.channel_scope(payload.get('channel_id'))
+            if parent_id is not None:
+                parent = self.get(parent_id)
+                if not parent or parent['parent_id'] is not None or parent['channel_id'] != channel_id or not parent['session']:
+                    raise ApiError('Choose a ready Codex parent in this channel.', 409, key='managedParentMissing')
+        managed_cli.require_login(role)
+        with self.room.changed:
+            if self.closed:
+                raise ApiError('ACS is stopping.', 503, key='errorUnavailable')
+            if parent_id is not None and self.get(parent_id) is None:
+                raise ApiError('Choose a ready Codex parent in this channel.', 409, key='managedParentMissing')
+            with self.db:
+                agent = self.room._register(payload)
+                self.db.execute("""
+                    INSERT INTO managed_agents(id,parent_id,cwd,model,effort,language) VALUES (?,?,?,?,?,?)
+                """, (agent['id'], parent_id, str(cwd), model, effort, language))
+            self.room._notify_board()
+            self.room._write_board(channel_id)
+            self._start(agent['id'])
+            return agent
+
+    def start(self):
+        with self.room.changed:
+            for row in self.db.execute('SELECT id FROM managed_agents').fetchall():
+                self._start(row['id'])
+
+    def _start(self, agent_id):
+        worker = Thread(target=self._work, args=(agent_id,), name='acs-' + agent_id, daemon=True)
+        self.threads[agent_id] = worker
+        worker.start()
+
+    def public(self, row, *, local=False):
+        status = 'ready'
+        if row['error']:
+            status = 'failed'
+        elif not row['session']:
+            status = 'starting'
+        elif row['active_message'] is not None:
+            status = 'busy'
+        result = {
+            'managed': True, 'parent_id': row['parent_id'], 'state': status,
+            'resumable': bool(row['session']),
+            'error': row['error'], 'usage': json.loads(row['usage']) if row['usage'] else None,
+            'model_settings': {'model': row['model'], 'reasoning_effort': row['effort']},
+            'waiting': status == 'ready',
+        }
+        if local:
+            result['cwd'] = row['cwd']
+        return result
+
+    def delete(self, ids):
+        for agent_id in ids:
+            turn = self.processes.get(agent_id)
+            if turn:
+                turn.stop()
+        self.db.executemany('DELETE FROM managed_agents WHERE id=?', ((agent_id,) for agent_id in ids))
+
+    def cancel_channel(self, channel_id):
+        for row in self.db.execute("""
+            SELECT a.id FROM managed_agents a JOIN participants p ON p.id=a.id WHERE p.channel_id=?
+        """, (channel_id,)):
+            turn = self.processes.get(row['id'])
+            if turn and self.get(row['id'])['active_message'] is not None:
+                turn.stop()
+
+    def close(self):
+        with self.room.changed:
+            self.closed = True
+            for turn in (*self.processes.values(), *self.logins.values()):
+                turn.stop()
+            workers = list(self.threads.values())
+            self.room.changed.notify_all()
+        for worker in workers:
+            worker.join(timeout=2)
+
+    def _work(self, agent_id):
+        try:
+            with self.room.changed:
+                agent = self.get(agent_id)
+                if agent and agent['active_message'] is not None:
+                    self._finish(agent, agent['active_message'], failure='managedInterrupted')
+            while True:
+                with self.room.changed:
+                    agent = self.get(agent_id)
+                    if self.closed or not agent or (not agent['session'] and agent['error']):
+                        return
+                    message = None
+                    if agent['session']:
+                        message = self.db.execute(f"""
+                            SELECT m.* {self.pending_sql} AND d.agent_id=? ORDER BY m.id LIMIT 1
+                        """, (agent_id,)).fetchone()
+                        if not message:
+                            self.room.changed.wait()
+                            continue
+                        with self.db:
+                            self.db.execute('UPDATE managed_agents SET active_message=?,error=NULL WHERE id=?',
+                                            (message['id'], agent_id))
+                        self.room._notify()
+                    message_id = message['id'] if message else None
+                self._turn(agent, message, message_id)
+        finally:
+            with self.room.changed:
+                self.threads.pop(agent_id, None)
+
+    def _prompt(self, agent, message):
+        if not message:
+            return 'Initialize this AgentChatSystem conversation. Do not use tools. Reply only: Ready.', set()
+        children = set()
+        instructions = 'Respond to this AgentChatSystem message in the sender’s language.'
+        if agent['parent_id'] is None:
+            cursor = message
+            depth = 0
+            while cursor and cursor['reply_to'] and depth < MAX_HANDOFFS * 2:
+                cursor = self.db.execute('SELECT reply_to FROM messages WHERE id=?', (cursor['reply_to'],)).fetchone()
+                depth += 1
+            if depth < MAX_HANDOFFS * 2:
+                rows = self.db.execute("""
+                    SELECT a.id,p.name,p.role FROM managed_agents a JOIN participants p ON a.id=p.id
+                    WHERE a.parent_id=? AND a.session IS NOT NULL AND p.removed_at IS NULL
+                """, (agent['id'],))
+                roster = [dict(row) for row in rows]
+                children = {child['id'] for child in roster}
+                instructions += (
+                    '\nYou are the parent. Only use child_id to delegate work to an existing child. '
+                    'When delegating, put the complete task for that child in message. Its response returns here. '
+                    'For your final reply set child_id to null. Available children: ' + json.dumps(roster, ensure_ascii=False)
+                )
+            else:
+                instructions += '\nGive the final answer now and set child_id to null.'
+        return instructions + '\n\nIncoming message:\n' + message['body'], children
+
+    def _attachments(self, message, target):
+        source = message
+        while source['sender'] != 'user' and source['reply_to']:
+            source = self.db.execute('SELECT * FROM messages WHERE id=?', (source['reply_to'],)).fetchone()
+            if source is None:
+                return ''
+        attachments = []
+        for row in self.db.execute('SELECT id,name,data FROM chat_attachments WHERE message_id=?', (source['id'],)):
+            path = target / (str(row['id']) + Path(row['name']).suffix)
+            path.write_bytes(row['data'])
+            attachments.append({'name': row['name'], 'path': str(path)})
+        if not attachments:
+            return ''
+        return '\n\nFiles attached by the user for this task (available during this turn):\n' + json.dumps(attachments, ensure_ascii=False)
+
+    def _turn(self, agent, message, message_id):
+        agent_id = agent['id']
+        turn = None
+        scratch = None
+        response = None
+        try:
+            with self.room.changed:
+                if self.closed or not self.get(agent_id):
+                    return
+                if message and not self.db.execute('SELECT 1 FROM messages WHERE id=?', (message_id,)).fetchone():
+                    self._finish(agent, message_id)
+                    return
+                prompt, children = self._prompt(agent, message)
+                program = managed_cli.executable(agent['role'])
+                if not program:
+                    raise managed_cli.CliError('CLI missing')
+                schema = None
+                if message:
+                    scratch = TemporaryDirectory(prefix='acs-turn-', dir=self.data_dir)
+                    if not agent['parent_id']:
+                        schema = Path(scratch.name) / 'response.json'
+                        schema.write_text(json.dumps(PARENT_SCHEMA), encoding='utf-8')
+                    prompt += self._attachments(message, Path(scratch.name))
+                turn = managed_cli.Turn(managed_cli.command(program, agent, schema), agent['cwd'])
+                self.processes[agent_id] = turn
+            output = turn.read(prompt, timeout=900 if message else 120)
+            session, body, usage = managed_cli.result(agent['role'], output)
+            if agent['session'] and session != agent['session']:
+                raise managed_cli.CliError('CLI resumed a different session')
+            target = agent['parent_id'] if message and message['sender'] == agent['parent_id'] else None
+            if schema:
+                reply = json.loads(body)
+                body = reply['message']
+                child = reply['child_id']
+                if not isinstance(body, str) or not body.strip() or (child is not None and (not isinstance(child, str) or child not in children)):
+                    raise managed_cli.CliError('Invalid delegation')
+                target = child
+            response = (session, body.strip()[:10000].encode('utf-8', 'replace').decode(), usage, target)
+        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired, managed_cli.CliError):
+            pass
+        finally:
+            with self.room.changed:
+                if turn:
+                    turn.stop()
+                    self.processes.pop(agent_id, None)
+                if not self.closed and self.get(agent_id):
+                    self._finish(agent, message_id, response, failure=None if response else 'managedRunFailed')
+            try:
+                if turn:
+                    turn.reap()
+            finally:
+                if scratch:
+                    scratch.cleanup()
+
+    def _finish(self, agent, message_id, response=None, *, failure=None):
+        labels = catalog(agent['language'])
+        aid, channel_id = agent['id'], agent['channel_id']
+        original = self.db.execute('SELECT sender FROM messages WHERE id=?', (message_id,)).fetchone()
+        published = None
+        with self.db:
+            if response:
+                session, body, usage, target = response
+                if usage:
+                    previous = json.loads(agent['usage']) if agent['usage'] else {}
+                    usage['total'] = previous.get('total', 0) + usage['input'] + usage['output']
+                self.db.execute('UPDATE managed_agents SET session=?,usage=COALESCE(?,usage) WHERE id=?',
+                                (session, json.dumps(usage) if usage else None, aid))
+            else:
+                target = agent['parent_id'] if original and original['sender'] == agent['parent_id'] else None
+                body = labels[failure] if failure else ''
+            if target and self.get(target) is None:
+                target = None
+                body += '\n\n' + labels['managedChildUnavailable']
+            if message_id is None and response:
+                published = self.room._insert(channel_id, aid, None, labels['managedCreated'])
+            elif original:
+                published = self.room._insert(channel_id, aid, target, body, message_id)
+            self.db.execute('UPDATE managed_agents SET active_message=NULL,error=? WHERE id=?',
+                            (failure if message_id is None or original else None, aid))
+        if published:
+            self.room._write_log(channel_id, published)
+        self.room._notify()
