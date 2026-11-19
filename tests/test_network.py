@@ -88,7 +88,7 @@ class NetworkAccess(unittest.TestCase):
         self.assertEqual(empty['channels'][0]['id'], channel['id'])
         status, selected = self.call('/api/room?channel=' + channel['id'], host=host)
         self.assertEqual(status, 200)
-        self.assertEqual(len(selected['participants']), len(initial['participants']))
+        self.assertEqual(selected['participants'], [])
 
     def test_legacy_resume_settings_do_not_block_manual_mcp_delivery(self):
         root = Path(self.temporary.name)

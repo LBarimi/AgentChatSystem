@@ -51,7 +51,7 @@ function initializeFileBrowser() {
     return svg;
   }
   function navigation() {
-    for (const kind of ["shared", "logs"]) {
+    for (const kind of ["shared", "logs", "board"]) {
       const link = el("files-" + kind);
       link.href = folderURL(view, "", 0, kind);
       if (view.kind === kind) link.setAttribute("aria-current", "page");

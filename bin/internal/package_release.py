@@ -84,6 +84,7 @@ OTHER_FILES = (
     'bin/internal/stop.cmd',
     'media/readme/chat.png',
     'media/readme/channel-files.jpg',
+    'media/readme/channel-isolation.jpg',
     'media/readme/board.png',
     'media/readme/board-read-receipts.png',
 )

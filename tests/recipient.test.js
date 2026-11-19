@@ -9,6 +9,18 @@ const RecipientSelection = vm.runInNewContext(source + '\nRecipientSelection;');
 const agents = [{ id: 'codex', name: 'Codex' }, { id: 'claude', name: 'Claude' }];
 const translate = (key, values) => key === 'all' ? 'Everyone' : `${values.name} (unavailable)`;
 
+test('each channel keeps its own explicit recipient and starts with Everyone', () => {
+  const values = new Map([['relay-recipient', JSON.stringify({ id: 'claude', name: 'Claude' })]]);
+  const saved = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  assert.equal(new RecipientSelection(saved, 'general').id, 'claude');
+  const other = new RecipientSelection(saved, 'ch-other');
+  assert.equal(other.id, 'all');
+  other.choose('codex-2', [{ id: 'codex-2', name: 'Other Codex' }]);
+  assert.equal(new RecipientSelection(saved, 'ch-other').id, 'codex-2');
+  assert.equal(new RecipientSelection(saved, 'general').id, 'claude');
+  assert.equal(new RecipientSelection(saved, 'ch-new').id, 'all');
+});
+
 function storage(initial = null) {
   let value = initial;
   return { getItem: () => value, setItem: (_, next) => { value = next; } };

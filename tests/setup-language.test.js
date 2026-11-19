@@ -17,7 +17,7 @@ function fixture() {
     return nodes.get(id);
   };
   const state = {
-    setupRequest: 0, setupAgent: 'codex', current: null, iconInitializations: 0,
+    setupRequest: 0, setupAgent: 'codex', activeChannel: 'general', current: null, iconInitializations: 0,
     document: { documentElement: { lang: 'ko' } }, languageSelect: { selectedOptions: [{ textContent: '한국어' }] },
     roleName: { codex: 'Codex', claude: 'Claude' }, URLSearchParams, el,
     setupDialog: { open: true, querySelectorAll: () => copies, setAttribute() {}, removeAttribute() {}, showModal() { this.open = true; } },

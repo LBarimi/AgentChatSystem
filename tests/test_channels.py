@@ -23,7 +23,10 @@ class ChannelManagement(unittest.TestCase):
         self.addCleanup(lambda: self.room.db.close())
 
     def post(self, channel_id, body='A task', **extra):
-        return self.room.post(dict(sender='user', recipient='codex', body=body,
+        participants = self.room.participants(channel_id)
+        recipient = participants[0]['id'] if participants else self.room.register(
+            {'role': 'codex', 'name': 'Worker', 'channel_id': channel_id})['id']
+        return self.room.post(dict(sender='user', recipient=recipient, body=body,
                                    channel_id=channel_id, **extra))['message']
 
     def test_rename_preserves_identity_history_and_custom_default_name(self):
@@ -73,7 +76,7 @@ class ChannelManagement(unittest.TestCase):
             self.room.snapshot(channel['id'])
         self.assertEqual(error.exception.status, 404)
 
-    def test_default_channel_deletion_survives_restart_without_removing_participants(self):
+    def test_default_channel_deletion_survives_restart_and_removes_its_participants(self):
         self.assertEqual([channel['id'] for channel in self.room.channels()], ['general'])
         channel = self.room.snapshot('general')['channel']
         shared = Path(channel['shared']) / 'keep.txt'
@@ -90,7 +93,9 @@ class ChannelManagement(unittest.TestCase):
             self.room.db.close()
             self.room = Room(self.root / 'room.sqlite3')
             self.assertEqual(self.room.channels(), [])
-            self.assertEqual(self.room.participants(), participants)
+            self.assertEqual(self.room.db.execute('SELECT COUNT(*) FROM participants WHERE removed_at IS NULL').fetchone()[0], 0)
+            for participant in participants:
+                self.assertEqual(self.room.wait_message(participant['id'], 0)['state'], 'removed')
             snapshot = self.room.snapshot(None)
             self.assertIsNone(snapshot['channel'])
             for key in ('participants', 'archived_participants', 'messages'):
@@ -100,14 +105,15 @@ class ChannelManagement(unittest.TestCase):
                 self.post('general')
             self.assertEqual(error.exception.status, 404)
         replacement = self.room.create_channel({'name': 'New workspace'})
+        self.assertEqual(self.room.snapshot(replacement['id'])['participants'], [])
         self.post(replacement['id'])
         self.assertEqual(self.room.snapshot(replacement['id'])['total_messages'], 1)
-        self.assertEqual(len(self.room.snapshot(replacement['id'])['participants']), len(participants))
+        self.assertEqual(len(self.room.snapshot(replacement['id'])['participants']), 1)
 
     def test_default_deletion_preserves_other_channels_and_board(self):
         other = self.room.create_channel({'name': 'Keep me'})
         message = self.post(other['id'])
-        self.room.publish_board_post({'request_id': str(uuid4()), 'title': 'Instructions', 'body': 'Keep me'})
+        self.room.publish_board_post({'request_id': str(uuid4()), 'title': 'Instructions', 'body': 'Keep me', 'channel_id': other['id']})
         self.room.delete_channel('general')
         self.room.db.close()
         self.room = Room(self.root / 'room.sqlite3')
@@ -116,7 +122,8 @@ class ChannelManagement(unittest.TestCase):
         self.assertEqual([channel['id'] for channel in empty['channels']], [other['id']])
         self.assertEqual(empty['messages'], [])
         self.assertEqual(self.room.snapshot(other['id'])['messages'][0]['id'], message['id'])
-        self.assertEqual(self.room.wait_message('claude', 0)['state'], 'board_post')
+        agent = self.room.participants(other['id'])[0]['id']
+        self.assertEqual(self.room.wait_message(agent, 0)['state'], 'board_post')
 
     def test_existing_database_gets_initialization_marker_without_resetting_channels(self):
         self.room.rename_channel({'channel_id': 'general', 'name': 'My workspace'})
@@ -134,20 +141,21 @@ class ChannelManagement(unittest.TestCase):
 
     def test_deletion_wakes_a_scoped_receiver(self):
         for channel_id in ('general', self.room.create_channel({'name': 'Waiting'})['id']):
+            participants = self.room.participants(channel_id)
+            agent = participants[0]['id'] if participants else self.room.register(
+                {'role': 'codex', 'name': 'Waiting agent', 'channel_id': channel_id})['id']
             with self.subTest(channel=channel_id), ThreadPoolExecutor(max_workers=1) as pool:
-                pending = pool.submit(self.room.wait_message, 'codex', 3, channel_id)
+                pending = pool.submit(self.room.wait_message, agent, 3, channel_id)
                 deadline = monotonic() + 2
                 while monotonic() < deadline:
                     with self.room.changed:
-                        if 'codex' in self.room.waiters:
+                        if agent in self.room.waiters:
                             break
                     sleep(0.01)
-                self.assertIn('codex', self.room.waiters)
+                self.assertIn(agent, self.room.waiters)
                 self.room.delete_channel(channel_id)
-                with self.assertRaises(RequestError) as error:
-                    pending.result(timeout=1)
-                self.assertEqual(error.exception.status, 404)
-            self.assertNotIn('codex', self.room.waiters)
+                self.assertEqual(pending.result(timeout=1)['state'], 'removed')
+            self.assertNotIn(agent, self.room.waiters)
 
 
 class LocalSettings(unittest.TestCase):

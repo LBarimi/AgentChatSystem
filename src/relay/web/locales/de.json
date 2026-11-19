@@ -185,7 +185,7 @@
   "errorLocalFolder": "Gib einen absoluten lokalen Pfad mit Laufwerksbuchstaben ein.",
   "errorFolderName": "Der Ordnerpfad enthält einen ungültigen Namen.",
   "errorFolderCheck": "Der Ordnerpfad konnte nicht geprüft werden.",
-  "errorSharedOrLogs": "Wähle den Ordner shared oder logs.",
+  "errorSharedOrLogs": "Wählen Sie shared, logs oder board.",
   "errorCopyAccess": "Kein Zugriff auf den aktuellen shared-Ordner. Deaktiviere das Kopieren, um den Speicherort zu ändern.",
   "errorCopyName": "Am neuen Speicherort gibt es bereits ein Element mit diesem Namen: {path}",
   "errorCopyContents": "Am neuen Speicherort liegt eine Datei mit anderem Inhalt: {path}",
@@ -194,7 +194,7 @@
   "channelActions": "Menü für {name}",
   "renameChannel": "Kanal umbenennen",
   "deleteChannel": "Kanal löschen",
-  "deleteChannelConfirm": "Dieser Kanal, seine Nachrichten, Anhänge, das Chatprotokoll und ausstehende Nachrichten werden gelöscht. Dateien im gemeinsamen Ordner bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
+  "deleteChannelConfirm": "Diesen Kanal mit seinen Teilnehmern, Pinnwandbeiträgen, Nachrichten, Anhängen, Chatprotokollen und ausstehenden Zustellungen löschen. Gemeinsame Dateien bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
   "resizeChannels": "Breite der Kanalleiste ändern",
   "resizeParticipants": "Breite der Teilnehmerleiste ändern",
   "resizePanelHint": "Zum Anpassen ziehen oder die Pfeiltasten verwenden. Doppelklick setzt die Breite zurück.",
@@ -265,5 +265,8 @@
   "agentDisconnected": "(Getrennt)",
   "agentDisconnectedHint": "Wartet derzeit nicht auf Nachrichten in diesem Kanal.",
   "noChannelSelected": "Kein Kanal ausgewählt",
-  "chooseChannelHint": "Wählen Sie links einen Kanal aus oder erstellen Sie einen neuen, um eine Unterhaltung zu beginnen."
+  "chooseChannelHint": "Wählen Sie links einen Kanal aus oder erstellen Sie einen neuen, um eine Unterhaltung zu beginnen.",
+  "boardFolderHint": "Hier werden Beiträge und Anhänge dieses Kanals gespeichert.",
+  "openBoardFolder": "Ordner board öffnen",
+  "errorAgentChannel": "Dieser Teilnehmer gehört zu einem anderen Kanal."
 }

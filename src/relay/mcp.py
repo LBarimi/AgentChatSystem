@@ -26,7 +26,7 @@ TOOLS = [
             "If state is board_deleted, exclude all instructions from that post ID from future work, then call read_board_post to acknowledge. "
             "If a chat message includes attachments, open them with read_chat_attachment. "
             "If state is removed, stop waiting for this agent ID. "
-            "The workspace board is included even when a chat channel is selected. "
+            "Only this agent's channel and its board are accessible. Other channel IDs are rejected. "
             "Returns immediately on arrival. If timeout, call again only while the user "
             "has requested listening. Continuous listening has no total time limit. "
             "Keep calling receive after timeouts and completed replies. "
@@ -78,12 +78,12 @@ TOOLS = [
     },
     {
         'name': 'channels',
-        'description': 'List channels with their IDs and shared and logs folder paths.',
+        'description': 'Show this agent’s channel with its ID and shared, logs and board folder paths.',
         'inputSchema': {'type': 'object', 'additionalProperties': False, 'properties': {}},
     },
     {
         'name': 'list_board_posts',
-        'description': 'List recent posts from the user’s workspace board. For older posts, use the returned next_before ID.',
+        'description': 'List recent posts from this agent’s channel board. For older posts, use the returned next_before ID.',
         'inputSchema': {'type': 'object', 'additionalProperties': False, 'properties': {'before': BOARD_ID}},
     },
     {
@@ -191,6 +191,7 @@ def dispatch(client, agent, packet):
             "serverInfo": {"name": f"local-chat-{agent}", "version": MCP_VERSION},
             "instructions": (
                 WORK_TOOLS_INSTRUCTIONS +
+                "This agent is bound to one channel. Messaging, board, participant and shared-file tools are scoped to that channel. "
                 "When the user requests continuous Relay listening, keep calling receive "
                 "after timeouts, completed replies, and board checks until the user stops "
                 "or the agent is removed. There is no ten-minute listening limit. "
@@ -223,13 +224,13 @@ def dispatch(client, agent, packet):
                                   attachments=args.get('attachments'))
         elif name == 'participants':
             channel_id = args.get('channel_id')
-            query = '?' + urlencode({'channel': channel_id}) if channel_id else ''
+            query = '?' + urlencode({'agent': agent, **({'channel': channel_id} if channel_id else {})})
             result = client.call('/api/participants' + query)
         elif name == 'channels':
-            result = client.call('/api/channels')
+            result = client.call('/api/channels?' + urlencode({'agent': agent}))
         elif name == 'list_board_posts':
             before = args.get('before')
-            query = '?' + urlencode({'before': before}) if before is not None else ''
+            query = '?' + urlencode({'agent': agent, **({'before': before} if before is not None else {})})
             result = client.call('/api/board' + query)
         elif name == 'read_board_post':
             result = client.call('/api/board/read', {'agent': agent, 'post_id': args.get('post_id')})
@@ -237,7 +238,7 @@ def dispatch(client, agent, packet):
             image_id = args.get('image_id')
             if type(image_id) is not int or image_id < 1:
                 raise RpcError(-32602, 'Invalid image ID')
-            return attachment_content(client, '/api/board/attachment?' + urlencode({'id': image_id}))
+            return attachment_content(client, '/api/board/attachment?' + urlencode({'id': image_id, 'agent': agent}))
         elif name == 'read_chat_attachment':
             attachment_id = args.get('attachment_id')
             if type(attachment_id) is not int or attachment_id < 1:
@@ -245,7 +246,7 @@ def dispatch(client, agent, packet):
             route = '/api/messages/attachment?' + urlencode({'id': attachment_id, 'agent': agent})
             return attachment_content(client, route)
         elif name in ('list_shared', 'read_shared', 'write_shared'):
-            result = client.call('/api/shared/' + name.split('_')[0], args)
+            result = client.call('/api/shared/' + name.split('_')[0], args | {'agent': agent})
         else:
             raise RpcError(-32602, "Unknown tool")
         return {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]}

@@ -71,8 +71,8 @@ class ChannelStorage:
             raise StorageError('폴더 경로를 확인할 수 없습니다.', key='errorFolderCheck') from None
 
     def folder(self, root, kind):
-        if kind not in ('shared', 'logs'):
-            raise StorageError('shared 또는 logs 폴더를 선택하세요.', key='errorSharedOrLogs')
+        if kind not in ('shared', 'logs', 'board'):
+            raise StorageError('shared, logs 또는 board 폴더를 선택하세요.', key='errorSharedOrLogs')
         path = root / kind
         self._ordinary(path).mkdir(parents=True, exist_ok=True)
         return self._ordinary(path)
@@ -88,7 +88,49 @@ class ChannelStorage:
             'default_folder': str(default),
             'shared': str(root / 'shared'),
             'logs': str(root / 'logs'),
+            'board': str(root / 'board'),
         }
+
+    def export_board(self, root, channel_id, posts):
+        """Export only this channel's posts; SQLite remains the recovery source."""
+        board = self.folder(root, 'board')
+        marker = self._ordinary(board / 'channel.json')
+        if marker.exists():
+            try:
+                matches = json.loads(marker.read_text(encoding='utf-8')).get('channel_id') == channel_id
+            except (ValueError, AttributeError):
+                matches = False
+            if not matches:
+                raise StorageError('다른 채널의 게시판 폴더입니다.', 409, key='errorFolderOverlap')
+        elif any(board.iterdir()):
+            raise StorageError('게시판 폴더가 이미 사용 중입니다.', 409, key='errorFolderOverlap')
+        with atomic_text(marker) as handle:
+            json.dump({'channel_id': channel_id}, handle)
+        for post, attachments in posts:
+            folder = self._ordinary(board / str(post['id']))
+            folder.mkdir(exist_ok=True)
+            target = self._ordinary(folder / 'post.json')
+            for attachment in attachments:
+                if not attachment['name']:
+                    continue  # Older deleted posts did not retain filenames.
+                file = self._ordinary(folder / f"{attachment['id']}-{attachment['name']}")
+                if post.get('status') == 'deleted':
+                    file.unlink(missing_ok=True)
+                else:
+                    with NamedTemporaryFile(dir=folder, delete=False) as temporary:
+                        temporary_path = Path(temporary.name)
+                        try:
+                            temporary.write(attachment['data'])
+                        except BaseException:
+                            temporary.close()
+                            temporary_path.unlink(missing_ok=True)
+                            raise
+                    try:
+                        temporary_path.replace(file)
+                    finally:
+                        temporary_path.unlink(missing_ok=True)
+            with atomic_text(target) as handle:
+                json.dump(post, handle, ensure_ascii=False, indent=2)
 
     def copy_shared(self, source_root, target_root):
         source = self._ordinary(source_root / 'shared')

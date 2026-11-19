@@ -53,15 +53,13 @@ class ChatFiles:
                 messages[metadata.pop('message_id')].setdefault('attachments', []).append(metadata)
         return list(messages.values())
 
-    def get(self, attachment_id, agent=None):
+    def get(self, attachment_id, channel_id='general'):
         if type(attachment_id) is not int or not 1 <= attachment_id <= 2**63 - 1:
             raise UploadError('유효한 첨부 파일 번호를 입력하세요.', key='errorAttachmentId')
         row = self.db.execute('''
             SELECT a.name,a.mime_type,a.data FROM chat_attachments a JOIN messages m ON m.id=a.message_id
-            WHERE a.id=? AND (? IS NULL OR m.sender=? OR EXISTS(
-                SELECT 1 FROM deliveries d WHERE d.message_id=m.id AND d.agent_id=?
-            ))
-        ''', (attachment_id, agent, agent, agent)).fetchone()
+            WHERE a.id=? AND m.channel_id=?
+        ''', (attachment_id, channel_id)).fetchone()
         if row is None:
             raise UploadError('첨부 파일을 찾을 수 없습니다.', 404, key='errorAttachmentMissing')
         return row

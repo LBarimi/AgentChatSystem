@@ -79,6 +79,7 @@ def render_connection_prompts(language, role, values):
     specific = catalog[f'setup_{role}']
     install = [paragraph.format_map(values) for paragraph in (
         specific[:1] + catalog['setup_before'] + specific[1:] + catalog['setup_after'])]
+    install.append(catalog['channel_scope'].format_map(values))
     listening = [listening_marker(values['agent'])]
     listening.extend(paragraph.format_map(values) for paragraph in catalog['listening'])
     return {'install_prompt': '\n\n'.join(install), 'prompt': '\n\n'.join(listening)}

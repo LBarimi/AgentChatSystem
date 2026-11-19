@@ -219,7 +219,7 @@ class SetupConnectionCheck(unittest.TestCase):
         result = self.check_bridge('codex')
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn('"bridge": "verified"', result.stdout)
-        self.assertIn('Agent is not registered', result.stderr)
+        self.assertIn('MCP verification failed', result.stderr)
 
 
 if __name__ == '__main__':

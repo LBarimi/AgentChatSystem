@@ -20,7 +20,7 @@
       "message를 받으면 read_chat_attachment(attachment_id=첨부 ID)로 파일을 확인하고 reply(message_id=받은 ID, body=답변)로 응답해. 파일 첨부는 reply.attachments에 로컬 절대 경로를 넣어. 허용 확장자: PNG, JPG, TXT, CSV, XLSX, XLSM, JSON, XML, PDF, PPTX, MP4, GIF. 최대 30개, 파일당 10 MiB야. 첨부 읽기 도구가 문서·영상의 로컬 파일 경로를 반환하면 파일 도구로 내용을 확인해.",
       "{legacy_png}",
       "재연결 전에는 아래 터미널 명령으로도 첨부할 수 있어. 123을 받은 메시지 ID로, 경로를 실제 PNG 경로로 바꿔줘.\n\n{legacy_command}",
-      "파일을 공유할 때는 받은 메시지의 channel에 나온 shared 경로와 채널 ID를 사용해. 다른 에이전트에게 답변을 전달하려면 participants에서 ID를 확인한 뒤 reply의 next_agent에 지정해. 한 채널만 수신하려면 channels에서 그 ID를 찾아 receive의 channel_id에 지정해."
+      "이 에이전트는 {channel} 채널에만 속해. 참가자·접속 사용자·대화·게시판·파일은 채널별로 격리돼. 같은 채널 안에서만 지침과 파일을 공유해. receive는 채널 ID를 생략해도 이 채널만 수신하며 다른 채널 ID는 거부돼. channels와 participants도 이 채널만 반환해. 파일은 메시지의 channel에 나온 shared 경로를 사용하고, reply의 next_agent는 같은 채널 참가자만 지정해."
     ],
     "setup_before": [
       "이 요청은 이 컴퓨터에서 {app}의 {server} MCP 항목을 등록·갱신하고 연결을 검사하도록 승인한 작업이야. 사용자가 외출 중이므로 선택 질문이나 불필요한 재확인 없이 현재 허용된 권한 안에서 진행해. 필수 승인·관리자 권한·로그인이 요구되면 해당 작업을 보류하고 사유를 결과에 남겨. 권한 거부 후 다른 도구·셸·경로로 같은 작업을 우회하거나 승인 창을 자동 조작하지 마. 권한 정책, 샌드박스, 신뢰 설정, 방화벽, 다른 서버 설정은 바꾸지 마.",
@@ -45,7 +45,8 @@
       "timeout": "MCP 연결 검사가 20초 제한 시간을 초과했습니다."
     },
     "config_codex": "Codex config.toml 설정",
-    "config_claude": "Claude Code 사용자 MCP 설정"
+    "config_claude": "Claude Code 사용자 MCP 설정",
+    "channel_scope": "이 에이전트는 {channel} 채널에만 속해. 참가자·접속 사용자·대화·게시판·파일은 채널별로 격리돼. 같은 채널 안에서만 지침과 파일을 공유해. receive는 채널 ID를 생략해도 이 채널만 수신하며 다른 채널 ID는 거부돼. channels와 participants도 이 채널만 반환해. 파일은 메시지의 channel에 나온 shared 경로를 사용하고, reply의 next_agent는 같은 채널 참가자만 지정해."
   },
   "en": {
     "work_tools": "Use the assigned Relay server for messaging. For the task itself, use the tools available in this session, including image generation and editing, file operations, the terminal, web search, the browser, and other MCP servers, within the user's instructions and existing permissions. Carry out image requests with an actual image generation tool and report the reason if the tool is unavailable or the call fails.",
@@ -68,7 +69,7 @@
       "On message, read attachments with read_chat_attachment(attachment_id=the attachment ID) and reply using reply(message_id=the received ID, body=your reply). To attach files, pass absolute local paths in reply.attachments: PNG, JPG, TXT, CSV, XLSX, XLSM, JSON, XML, PDF, PPTX, MP4, GIF. Up to 30 files, 10 MiB each. Attachment readers return a local file path for documents and videos; use your file tools to inspect them.",
       "{legacy_png}",
       "Before reconnecting MCP, you can also attach a PNG with this terminal command. Replace 123 with the received message ID and update the PNG path.\n\n{legacy_command}",
-      "Use the channel ID and its shared path from the received message when sharing files. To pass a reply to another agent, look up its ID with participants and use it as next_agent in reply. To listen to one channel, find its ID with channels and pass it as channel_id to receive."
+      "This agent belongs only to channel {channel}. Participants, connected users, chat, board posts, and files are isolated by channel and shared only within that channel. receive listens only to this channel even when channel_id is omitted; other channel IDs are rejected. channels and participants return only this channel. Use the shared path from the received message’s channel, and choose reply next_agent only from participants in this channel."
     ],
     "setup_before": [
       "This request authorizes registering or updating only the {app} MCP entry {server} and checking its connection on this computer. The user is away: proceed within existing permissions without optional questions or repeated confirmation. If mandatory approval, elevation, or login is required, leave that step pending and report why. Do not retry a denied operation through another tool, shell, or path or operate approval dialogs. Preserve permission policies, sandboxing, trust settings, firewall rules, and other servers.",
@@ -93,7 +94,8 @@
       "timeout": "MCP verification timed out after 20 seconds."
     },
     "config_codex": "Codex config.toml",
-    "config_claude": "Claude Code user MCP configuration"
+    "config_claude": "Claude Code user MCP configuration",
+    "channel_scope": "This agent belongs only to channel {channel}. Participants, connected users, chat, board posts, and files are isolated by channel and shared only within that channel. receive listens only to this channel even when channel_id is omitted; other channel IDs are rejected. channels and participants return only this channel. Use the shared path from the received message’s channel, and choose reply next_agent only from participants in this channel."
   },
   "ja": {
     "work_tools": "Relay のメッセージの送受信には指定されたサーバーを使ってください。実際の作業では、ユーザーの指示と既存の権限の範囲内で、このセッションで利用できる画像の生成・編集、ファイル操作、ターミナル、ウェブ検索、ブラウザー、ほかの MCP サーバーを使えます。画像の生成は実際の生成ツールで行い、使えない場合や失敗した場合は理由を伝えてください。",
@@ -116,7 +118,7 @@
       "message を受け取ったら read_chat_attachment(attachment_id=添付 ID) で確認し、reply(message_id=受信 ID, body=返信) で応答してください。reply.attachments にはローカルの絶対パスを指定します。対応形式: PNG, JPG, TXT, CSV, XLSX, XLSM, JSON, XML, PDF, PPTX, MP4, GIF。最大30ファイル、各10 MiBです。文書や動画は返されたローカルファイルパスをファイルツールで開いて確認してください。",
       "{legacy_png}",
       "MCP の再接続前は、次の ターミナルコマンドでも PNG を添付できます。123 を受信メッセージ ID に、パスを実際の PNG のパスに置き換えてください。\n\n{legacy_command}",
-      "ファイルの共有には受信メッセージに示されたチャンネル ID と shared パスを使ってください。返信を別のエージェントに渡す場合は participants で ID を調べ、reply の next_agent に指定してください。1 つのチャンネルだけを受信する場合は channels で ID を調べ、receive の channel_id に指定してください。"
+      "このエージェントはチャンネル {channel} のみに所属します。参加者、接続ユーザー、チャット、掲示板、ファイルはチャンネルごとに分離され、同じチャンネル内でのみ共有します。receive は channel_id を省略しても所属チャンネルのみ受信し、別の ID は拒否します。channels と participants も所属チャンネルのみ返します。受信メッセージの channel にある shared パスを使用し、reply の next_agent は同じチャンネルの参加者から選んでください。"
     ],
     "setup_before": [
       "この依頼は、このコンピューターの {app} MCP 項目 {server} の登録・更新と接続確認を許可します。ユーザーは不在のため、不要な質問や再確認をせず既存の権限内で進めてください。必須の承認・管理者権限・ログインが必要なら、その工程を保留して理由を報告してください。拒否された操作を別のツール・シェル・パスで迂回したり、承認画面を操作したりしないでください。権限ポリシー、サンドボックス、信頼設定、ファイアウォール、他のサーバーは変更しません。",
@@ -141,7 +143,8 @@
       "timeout": "MCP接続の検証が20秒の制限時間を超えました。"
     },
     "config_codex": "Codex config.toml設定",
-    "config_claude": "Claude CodeのユーザーMCP設定"
+    "config_claude": "Claude CodeのユーザーMCP設定",
+    "channel_scope": "このエージェントはチャンネル {channel} のみに所属します。参加者、接続ユーザー、チャット、掲示板、ファイルはチャンネルごとに分離され、同じチャンネル内でのみ共有します。receive は channel_id を省略しても所属チャンネルのみ受信し、別の ID は拒否します。channels と participants も所属チャンネルのみ返します。受信メッセージの channel にある shared パスを使用し、reply の next_agent は同じチャンネルの参加者から選んでください。"
   },
   "zh-CN": {
     "work_tools": "使用指定的 Relay 服务器收发消息。执行任务时，可以在用户指令和现有权限范围内，使用当前会话提供的图像生成与编辑、文件操作、终端、网页搜索、浏览器或其他 MCP 服务器。生成图像时请调用实际的生成工具，工具不可用或调用失败时请说明原因。",
@@ -164,7 +167,7 @@
       "收到 message 后，使用 read_chat_attachment(attachment_id=附件 ID) 查看附件，并调用 reply(message_id=收到的 ID, body=回复) 回答。reply.attachments 接收本地绝对路径。支持：PNG, JPG, TXT, CSV, XLSX, XLSM, JSON, XML, PDF, PPTX, MP4, GIF。最多30个文件，每个10 MiB。文档和视频会返回本地文件路径，请使用文件工具查看内容。",
       "{legacy_png}",
       "在重新连接 MCP 之前，也可用以下 终端命令附加 PNG。将 123 替换为收到的消息 ID，并更新 PNG 路径。\n\n{legacy_command}",
-      "共享文件时，使用收到的消息中的频道 ID 和 shared 路径。若要把回复转交给其他智能体，用 participants 查找其 ID，并将其作为 reply 的 next_agent。若只监听一个频道，用 channels 查找频道 ID，并将其作为 receive 的 channel_id。"
+      "此代理仅属于频道 {channel}。参与者、在线用户、聊天、公告板和文件按频道隔离，仅在同一频道内共享。receive 即使省略 channel_id 也只接收所属频道的消息，其他频道 ID 会被拒绝。channels 和 participants 也只返回所属频道。使用收到的消息中 channel 提供的 shared 路径，reply 的 next_agent 只能选择同一频道的参与者。"
     ],
     "setup_before": [
       "本请求授权在这台电脑上仅注册或更新 {app} 的 MCP 条目 {server} 并验证连接。用户不在，请在现有权限内执行，不要提出可选问题或重复确认。若必须获得批准、管理员权限或登录，请保留该步骤并报告原因。不要通过其他工具、Shell 或路径绕过权限拒绝，也不要操作批准窗口。保留权限策略、沙箱、信任设置、防火墙和其他服务器设置。",
@@ -189,7 +192,8 @@
       "timeout": "MCP连接验证超过了20秒的时间限制。"
     },
     "config_codex": "Codex config.toml配置",
-    "config_claude": "Claude Code用户MCP配置"
+    "config_claude": "Claude Code用户MCP配置",
+    "channel_scope": "此代理仅属于频道 {channel}。参与者、在线用户、聊天、公告板和文件按频道隔离，仅在同一频道内共享。receive 即使省略 channel_id 也只接收所属频道的消息，其他频道 ID 会被拒绝。channels 和 participants 也只返回所属频道。使用收到的消息中 channel 提供的 shared 路径，reply 的 next_agent 只能选择同一频道的参与者。"
   },
   "zh-TW": {
     "work_tools": "使用指定的 Relay 伺服器收發訊息。執行工作時，可以在使用者指示與現有權限範圍內，使用此工作階段提供的圖片生成與編輯、檔案操作、終端機、網頁搜尋、瀏覽器或其他 MCP 伺服器。生成圖片時請呼叫實際的生成工具，工具無法使用或執行失敗時請說明原因。",
@@ -212,7 +216,7 @@
       "收到 message 後，使用 read_chat_attachment(attachment_id=附件 ID) 查看附件，並呼叫 reply(message_id=收到的 ID, body=回覆) 回答。reply.attachments 接收本機絕對路徑。支援：PNG, JPG, TXT, CSV, XLSX, XLSM, JSON, XML, PDF, PPTX, MP4, GIF。最多30個檔案，每個10 MiB。文件及影片會傳回本機檔案路徑，請使用檔案工具查看內容。",
       "{legacy_png}",
       "重新連線 MCP 之前，也可用下列 終端機命令附加 PNG。將 123 換成收到的訊息 ID，並更新 PNG 路徑。\n\n{legacy_command}",
-      "共用檔案時，使用收到的訊息中提供的頻道 ID 與 shared 路徑。如果要把回覆轉交給其他代理，請用 participants 找到對方的 ID，並將它設為 reply 的 next_agent。若只需監聽一個頻道，請用 channels 找到頻道 ID，並將它設為 receive 的 channel_id。"
+      "此代理僅屬於頻道 {channel}。參與者、連線使用者、聊天、佈告欄和檔案按頻道隔離，僅在同一頻道內共用。receive 即使省略 channel_id 也只接收所屬頻道的訊息，其他頻道 ID 會被拒絕。channels 和 participants 也只傳回所屬頻道。使用收到的訊息中 channel 提供的 shared 路徑，reply 的 next_agent 只能選擇同一頻道的參與者。"
     ],
     "setup_before": [
       "本請求授權在這台電腦上僅註冊或更新 {app} 的 MCP 項目 {server} 並驗證連線。使用者不在，請在既有權限內執行，不要提出非必要問題或重複確認。若必須取得核准、管理員權限或登入，請保留該步驟並回報原因。不要透過其他工具、Shell 或路徑繞過權限拒絕，也不要操作核准視窗。保留權限原則、沙箱、信任設定、防火牆及其他伺服器設定。",
@@ -237,7 +241,8 @@
       "timeout": "MCP連線驗證超過了20秒的時間限制。"
     },
     "config_codex": "Codex config.toml設定",
-    "config_claude": "Claude Code使用者MCP設定"
+    "config_claude": "Claude Code使用者MCP設定",
+    "channel_scope": "此代理僅屬於頻道 {channel}。參與者、連線使用者、聊天、佈告欄和檔案按頻道隔離，僅在同一頻道內共用。receive 即使省略 channel_id 也只接收所屬頻道的訊息，其他頻道 ID 會被拒絕。channels 和 participants 也只傳回所屬頻道。使用收到的訊息中 channel 提供的 shared 路徑，reply 的 next_agent 只能選擇同一頻道的參與者。"
   },
   "ru": {
     "work_tools": "Используйте указанный сервер Relay для обмена сообщениями. Для самой работы используйте доступные в сеансе инструменты создания и редактирования изображений, работы с файлами, терминал, поиск, браузер и другие серверы MCP в пределах указаний пользователя и имеющихся разрешений. Для создания изображения вызовите инструмент генерации, а если он недоступен или завершился ошибкой, сообщите причину.",
@@ -260,7 +265,7 @@
       "При message прочитайте вложения через read_chat_attachment(attachment_id=ID вложения) и ответьте через reply(message_id=полученный ID, body=ответ). В reply.attachments передавайте абсолютные локальные пути. Форматы: PNG, JPG, TXT, CSV, XLSX, XLSM, JSON, XML, PDF, PPTX, MP4, GIF. До 30 файлов, по 10 МиБ каждый. Для документов и видео инструменты возвращают локальный путь; изучайте содержимое файловыми инструментами.",
       "{legacy_png}",
       "До переподключения MCP можно также приложить PNG этой командой в терминале. Замените 123 идентификатором полученного сообщения и укажите путь к своему PNG.\n\n{legacy_command}",
-      "При обмене файлами используйте идентификатор канала и путь shared из полученного сообщения. Чтобы передать ответ другому агенту, найдите его идентификатор через participants и укажите его в next_agent при вызове reply. Чтобы получать сообщения одного канала, найдите его идентификатор через channels и укажите его в channel_id при вызове receive."
+      "Этот агент относится только к каналу {channel}. Участники, подключённые пользователи, чат, доска и файлы изолированы по каналам и доступны совместно только внутри своего канала. receive слушает только этот канал даже без channel_id; другие ID отклоняются. channels и participants также возвращают только свой канал. Используйте путь shared из channel полученного сообщения; next_agent в reply должен быть участником того же канала."
     ],
     "setup_before": [
       "Этот запрос разрешает зарегистрировать или обновить только запись MCP {server} для {app} на этом компьютере и проверить подключение. Пользователь отсутствует: действуйте в рамках имеющихся прав без необязательных вопросов и повторных подтверждений. Если обязательны одобрение, повышение прав или вход, отложите шаг и укажите причину. Не обходите отказ другим инструментом, оболочкой или путём и не управляйте окнами одобрения. Сохраните политики доступа, песочницу, доверие, брандмауэр и другие серверы.",
@@ -285,7 +290,8 @@
       "timeout": "Проверка подключения MCP превысила ограничение в 20 секунд."
     },
     "config_codex": "Настройки Codex config.toml",
-    "config_claude": "Пользовательская конфигурация MCP для Claude Code"
+    "config_claude": "Пользовательская конфигурация MCP для Claude Code",
+    "channel_scope": "Этот агент относится только к каналу {channel}. Участники, подключённые пользователи, чат, доска и файлы изолированы по каналам и доступны совместно только внутри своего канала. receive слушает только этот канал даже без channel_id; другие ID отклоняются. channels и participants также возвращают только свой канал. Используйте путь shared из channel полученного сообщения; next_agent в reply должен быть участником того же канала."
   },
   "de": {
     "work_tools": "Verwende den zugewiesenen Relay-Server für den Nachrichtenaustausch. Nutze für die eigentliche Arbeit die in dieser Sitzung verfügbaren Werkzeuge für Bilderzeugung und Bildbearbeitung, Dateizugriffe, Terminal, Websuche, Browser und weitere MCP-Server. Halte dabei die Vorgaben des Nutzers und die vorhandenen Berechtigungen ein. Verwende für Bildaufträge ein tatsächliches Bilderzeugungswerkzeug und nenne den Grund, falls das Werkzeug fehlt oder der Aufruf fehlschlägt.",
@@ -308,7 +314,7 @@
       "Bei message lies Anhänge mit read_chat_attachment(attachment_id=Anhang-ID) und antworte mit reply(message_id=empfangene ID, body=Antwort). Übergib absolute lokale Pfade in reply.attachments. Formate: PNG, JPG, TXT, CSV, XLSX, XLSM, JSON, XML, PDF, PPTX, MP4, GIF. Bis zu 30 Dateien mit je 10 MiB. Für Dokumente und Videos wird ein lokaler Dateipfad zurückgegeben; untersuche sie mit deinen Dateiwerkzeugen.",
       "{legacy_png}",
       "Vor dem erneuten Verbinden mit MCP kannst du auch mit diesem Terminalbefehl eine PNG-Datei anhängen. Ersetze 123 durch die empfangene Nachrichten-ID und setze den Pfad zur PNG-Datei ein.\n\n{legacy_command}",
-      "Verwende zum Teilen von Dateien die Kanal-ID und den shared-Pfad aus der empfangenen Nachricht. Finde zum Weiterleiten einer Antwort die Agenten-ID mit participants und übergib sie als next_agent an reply. Finde zum Empfang aus einem einzelnen Kanal dessen ID mit channels und übergib sie als channel_id an receive."
+      "Dieser Agent gehört ausschließlich zum Kanal {channel}. Teilnehmer, verbundene Benutzer, Chat, Pinnwand und Dateien sind nach Kanal getrennt und werden nur innerhalb desselben Kanals geteilt. receive empfängt auch ohne channel_id nur diesen Kanal; andere Kanal-IDs werden abgewiesen. channels und participants geben ebenfalls nur den eigenen Kanal zurück. Verwende den shared-Pfad aus channel der empfangenen Nachricht. next_agent bei reply muss ein Teilnehmer desselben Kanals sein."
     ],
     "setup_before": [
       "Dieser Auftrag erlaubt nur das Registrieren oder Aktualisieren des MCP-Eintrags {server} für {app} auf diesem Computer sowie die Verbindungsprüfung. Der Nutzer ist abwesend: Arbeite mit vorhandenen Rechten ohne optionale Fragen oder erneute Bestätigung. Erfordert ein Schritt zwingend eine Freigabe, höhere Rechte oder Anmeldung, lasse ihn offen und nenne den Grund. Umgehe eine Ablehnung nicht mit anderen Werkzeugen, Shells oder Pfaden und bediene keine Freigabedialoge. Rechte, Sandbox, Vertrauenseinstellungen, Firewall und andere Server bleiben erhalten.",
@@ -333,6 +339,7 @@
       "timeout": "Die MCP-Verbindungsprüfung hat das Zeitlimit von 20 Sekunden überschritten."
     },
     "config_codex": "Codex-config.toml-Konfiguration",
-    "config_claude": "MCP-Benutzerkonfiguration für Claude Code"
+    "config_claude": "MCP-Benutzerkonfiguration für Claude Code",
+    "channel_scope": "Dieser Agent gehört ausschließlich zum Kanal {channel}. Teilnehmer, verbundene Benutzer, Chat, Pinnwand und Dateien sind nach Kanal getrennt und werden nur innerhalb desselben Kanals geteilt. receive empfängt auch ohne channel_id nur diesen Kanal; andere Kanal-IDs werden abgewiesen. channels und participants geben ebenfalls nur den eigenen Kanal zurück. Verwende den shared-Pfad aus channel der empfangenen Nachricht. next_agent bei reply muss ein Teilnehmer desselben Kanals sein."
   }
 }

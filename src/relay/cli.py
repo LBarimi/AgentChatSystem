@@ -136,13 +136,14 @@ def parser():
     server.add_argument("--db", type=Path, default=PROJECT / "var/room.sqlite3")
     sub.add_parser("status").add_argument('--channel', default='general')
     sub.add_parser('channels', help='채널 ID와 shared/logs 경로 표시')
-    sub.add_parser('board', help='게시판 최신 글 목록 표시')
+    sub.add_parser('board', help='채널 게시판 최신 글 목록 표시').add_argument('--channel', default='general')
     read_post = sub.add_parser('read-post', help='게시글 확인 및 열람 기록')
     read_post.add_argument('--agent', required=True)
     read_post.add_argument('--id', type=int, required=True)
     add = sub.add_parser('add', help='이름이 있는 에이전트를 로컬 채팅방에 등록')
     add.add_argument('--role', choices=['codex', 'claude'], required=True)
     add.add_argument('--name', required=True)
+    add.add_argument('--channel', default='general')
     send = sub.add_parser("start")
     send.add_argument("--to", dest="recipient", required=True, help='수신자 ID 또는 모두에게 보내는 all')
     send.add_argument('--channel', default='general')
@@ -175,7 +176,7 @@ def attachment_command(port, agent_id):
     return f'```sh\n{command}\n```'
 
 
-def connection_setup(port, agent_id, role, *, language='en'):
+def connection_setup(port, agent_id, role, *, language='en', channel_id='general'):
     language = language if language in LANGUAGES else 'en'
     exe = str(Path(sys.executable).resolve())
     args = [str(ARCHIVE)]
@@ -207,6 +208,7 @@ def connection_setup(port, agent_id, role, *, language='en'):
     values = {
         'app': APP_NAME,
         'agent': agent_id,
+        'channel': channel_id,
         'server': server,
         'legacy_server': legacy_server,
         'config_path': str(config_path),
@@ -264,11 +266,11 @@ def main():
         elif args.action == 'channels':
             result = client.call('/api/channels')
         elif args.action == 'board':
-            result = client.call('/api/board')
+            result = client.call('/api/board?' + urlencode({'channel': args.channel}))
         elif args.action == 'read-post':
             result = client.call('/api/board/read', {'agent': args.agent, 'post_id': args.id})
         elif args.action == 'add':
-            result = client.call('/api/participants', {'role': args.role, 'name': args.name})
+            result = client.call('/api/participants', {'role': args.role, 'name': args.name, 'channel_id': args.channel})
         elif args.action == "wait":
             result = client.wait(args.agent, args.seconds, args.channel)
         else:

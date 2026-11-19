@@ -1,10 +1,12 @@
 class RecipientSelection {
-  constructor(storage) {
+  constructor(storage, channelId = null) {
     this.storage = storage;
+    this.key = channelId === null ? "relay-recipient" : "relay-recipient:" + channelId;
     this.id = "all";
     this.name = "";
     try {
-      const saved = JSON.parse(storage.getItem("relay-recipient"));
+      const raw = storage.getItem(this.key) ?? (channelId === "general" ? storage.getItem("relay-recipient") : null);
+      const saved = JSON.parse(raw);
       if (saved && typeof saved.id === "string" && /^[a-zA-Z0-9_-]{1,32}$/.test(saved.id)) {
         this.id = saved.id;
         this.name = typeof saved.name === "string" ? saved.name.slice(0, 32) : saved.id;
@@ -20,7 +22,7 @@ class RecipientSelection {
     this.id = id;
     this.name = agent?.name || "";
     try {
-      this.storage.setItem("relay-recipient", JSON.stringify({ id: this.id, name: this.name }));
+      this.storage.setItem(this.key, JSON.stringify({ id: this.id, name: this.name }));
     } catch {
       // The explicit selection still remains active for this page.
     }

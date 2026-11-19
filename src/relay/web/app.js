@@ -4,7 +4,9 @@ const messages = el("messages");
 const scrollRegion = el("scroll-region");
 const input = el("body");
 const recipient = el("recipient");
-const recipientChoice = new RecipientSelection(localStorage);
+const defaultChannel = "general";
+let activeChannel = localStorage.getItem("relay-channel") ?? defaultChannel;
+let recipientChoice = new RecipientSelection(localStorage, activeChannel);
 if (recipientChoice.id !== "all") {
   recipient.replaceChildren(new Option(recipientChoice.name || recipientChoice.id, recipientChoice.id, true, true));
 }
@@ -17,8 +19,6 @@ const agentDeleteDialog = el("agent-delete-dialog");
 const channelDialog = el("channel-dialog");
 const foldersDialog = el("folders-dialog");
 const drafts = new Map();
-const defaultChannel = "general";
-let activeChannel = localStorage.getItem("relay-channel") ?? defaultChannel;
 let current = null;
 let live = false;
 let sending = false;
@@ -37,6 +37,8 @@ let participantKey = "";
 let messageKey = "";
 let channelKey = "";
 let boardOpen = false;
+let roomStream = null;
+const browserClient = draftId();
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -79,7 +81,7 @@ function participantAvatar(agent, previewUrl = "") {
   if (previewUrl || /^image:[a-f0-9]{64}$/.test(agent.icon || "")) {
     const image = element("img", "participant-image");
     image.alt = "";
-    image.src = previewUrl || "/api/participants/icon?" + new URLSearchParams({ agent: agent.id, v: agent.icon.slice(6) });
+    image.src = previewUrl || "/api/participants/icon?" + new URLSearchParams({ agent: agent.id, channel: activeChannel, v: agent.icon.slice(6) });
     image.addEventListener("error", () => node.replaceChildren(providerIcon(agent.role)), { once: true });
     node.append(image);
   } else {
@@ -120,6 +122,7 @@ function refreshControls() {
   el("add-agent").disabled = !ready || !hasChannel;
   el("add-channel").disabled = !ready;
   el("empty-add-channel").disabled = !ready;
+  el("board-toggle").disabled = !ready || !hasChannel;
   el("show-folders").disabled = !hasChannel;
   el("clear-chat").disabled = !ready || !hasChannel || current.total_messages === 0;
   for (const button of document.querySelectorAll(".channel-more")) button.disabled = !ready;
@@ -140,6 +143,7 @@ function showChannelView() {
   el("no-channel").hidden = boardOpen || hasChannel;
   el("show-folders").hidden = boardOpen || !hasChannel;
   el("clear-chat").hidden = boardOpen || !hasChannel;
+  el("board-toggle").hidden = !hasChannel;
   if (!hasChannel && el("agents-panel").classList.contains("open")) showSidePanel("agents", false);
   if (layoutChanged) window.dispatchEvent(new Event("resize"));
 }
@@ -294,7 +298,7 @@ function messageAttachments(attachments) {
   const list = element("ul", "message-attachments");
   for (const file of attachments) {
     const item = element("li", "message-attachment");
-    const address = "/api/messages/attachment?id=" + file.id;
+    const address = "/api/messages/attachment?" + new URLSearchParams({ id: file.id, channel: activeChannel });
     const name = element("a", "", file.name);
     name.href = address;
     name.target = "_blank";
@@ -383,6 +387,16 @@ function connection(up) {
   refreshControls();
 }
 
+function connectRoomStream() {
+  roomStream?.close();
+  connection(false);
+  const stream = new EventSource("/api/events?" + new URLSearchParams({ channel: activeChannel, client: browserClient }));
+  roomStream = stream;
+  stream.addEventListener("open", () => { if (roomStream === stream) connection(true); });
+  stream.addEventListener("error", () => { if (roomStream === stream) connection(false); });
+  stream.addEventListener("change", () => { if (roomStream === stream) loadRoom(); });
+}
+
 async function loadRoom() {
   const requestedChannel = activeChannel;
   const requestId = ++roomRequest;
@@ -403,13 +417,22 @@ async function loadRoom() {
 function switchChannel(channelId) {
   if (channelId === activeChannel) return;
   closeChannelMenu();
+  resetBoardChannel();
+  setupRequest++;
+  for (const dialog of [clearChatDialog, foldersDialog, setupDialog, joinDialog, agentDeleteDialog, channelDeleteDialog]) dialog.close();
+  if (channelDialog.dataset.channel) channelDialog.close();
   if (activeChannel) drafts.set(activeChannel, { body: input.value, files: chatFiles, requestId: chatDraftId });
   activeChannel = channelId;
+  recipientChoice = new RecipientSelection(localStorage, channelId);
   localStorage.setItem("relay-channel", channelId);
   current = null;
   participantKey = "";
   messageKey = "";
   channelKey = "";
+  el("roster").replaceChildren();
+  el("agent-count").textContent = "0";
+  el("agent-summary").textContent = t("loading");
+  recipient.replaceChildren(new Option(recipientChoice.id === "all" ? t("all") : recipientChoice.name || recipientChoice.id, recipientChoice.id, true, true));
   const draft = drafts.get(activeChannel);
   input.value = draft?.body || "";
   chatFiles = draft?.files || [];
@@ -424,12 +447,8 @@ function switchChannel(channelId) {
   showMessage("form-error", "");
   showSidePanel("channels", false);
   showChannelView();
-  if (!channelId) {
-    setupRequest++;
-    for (const dialog of [clearChatDialog, foldersDialog, setupDialog, joinDialog, agentDeleteDialog, channelDeleteDialog]) dialog.close();
-    if (channelDialog.dataset.channel) channelDialog.close();
-  }
   refreshControls();
+  connectRoomStream();
   loadRoom();
 }
 
@@ -679,7 +698,8 @@ function showFolderPaths(channel) {
   el("shared-path").textContent = channel.shared;
   el("server-folder-settings").hidden = !["localhost", "127.0.0.1"].includes(location.hostname);
   el("logs-path").textContent = channel.logs;
-  for (const kind of ["shared", "logs"]) {
+  el("board-path").textContent = channel.board;
+  for (const kind of ["shared", "logs", "board"]) {
     el(kind + "-link").href = "/files?" + new URLSearchParams({ channel: channel.id, kind });
   }
 }
@@ -809,7 +829,7 @@ el("icon-form").addEventListener("submit", async (event) => {
   refreshIconEditor();
   try {
     if (choice === "image") uploads = await uploadFiles([draft.file]);
-    const saved = await request("/api/participants/icon", { id: draft.id, icon: choice, upload_id: uploads[0]?.upload_id });
+    const saved = await request("/api/participants/icon", { id: draft.id, channel_id: draft.channel_id, icon: choice, upload_id: uploads[0]?.upload_id });
     if (iconDraft === draft) {
       initializeIconEditor({ ...draft, ...saved });
       el("icon-feedback").textContent = t("iconSaved");
@@ -864,7 +884,7 @@ async function openSetup(agentId, refreshOnly = false) {
   const requestId = ++setupRequest;
   const language = document.documentElement.lang;
   setSetupPromptLoading();
-  const query = new URLSearchParams({ agent: agentId, lang: language });
+  const query = new URLSearchParams({ agent: agentId, lang: language, channel: activeChannel });
   let setup;
   try {
     setup = await request("/api/setup?" + query);
@@ -917,14 +937,15 @@ el("join-form").addEventListener("submit", async (event) => {
   button.disabled = true;
   showMessage("join-error", "");
   let agent;
+  const channelId = activeChannel;
   try {
-    agent = await request("/api/participants", { role: el("join-role").value, name: el("join-name").value });
+    agent = await request("/api/participants", { role: el("join-role").value, name: el("join-name").value, channel_id: channelId });
   } catch (error) {
     showMessage("join-error", error.message);
   } finally {
     button.disabled = false;
   }
-  if (!agent) return;
+  if (!agent || activeChannel !== channelId) return;
   joinDialog.close();
   try {
     await openSetup(agent.id);
@@ -942,7 +963,7 @@ el("rename-form").addEventListener("submit", async (event) => {
   button.disabled = true;
   showMessage("rename-error", "");
   try {
-    const agent = await request("/api/participants/rename", { id, name: el("agent-name").value });
+    const agent = await request("/api/participants/rename", { id, name: el("agent-name").value, channel_id: activeChannel });
     if (setupAgent === id) {
       el("setup-title").textContent = t("connectAgent", { name: agent.name });
       el("agent-name").value = agent.name;
@@ -971,7 +992,7 @@ el("agent-delete-form").addEventListener("submit", async (event) => {
   const id = agentDeleteDialog.dataset.agentId;
   showMessage("agent-delete-error", "");
   try {
-    await request("/api/participants/delete", { id });
+    await request("/api/participants/delete", { id, channel_id: activeChannel });
     agentDeleteDialog.close();
     if (setupAgent === id) {
       setupDialog.close();
@@ -1116,9 +1137,6 @@ document.addEventListener("languagechange", () => {
 
 initializeLanguage().then(() => {
   document.title = appName + " — " + t("general");
-  el("board-toggle").disabled = false;
-  const stream = new EventSource("/api/events");
-  stream.addEventListener("open", () => connection(true));
-  stream.addEventListener("error", () => connection(false));
-  stream.addEventListener("change", loadRoom);
+  connectRoomStream();
+  loadRoom();
 });

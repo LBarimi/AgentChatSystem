@@ -117,6 +117,9 @@ class Room:
                 self.db.execute('ALTER TABLE participants ADD COLUMN removed_at TEXT')
             if 'icon' not in participant_columns:
                 self.db.execute("ALTER TABLE participants ADD COLUMN icon TEXT NOT NULL DEFAULT 'provider'")
+            if 'channel_id' not in participant_columns:
+                self.db.execute("ALTER TABLE participants ADD COLUMN channel_id TEXT DEFAULT 'general'")
+            self.db.execute('CREATE INDEX IF NOT EXISTS participants_channel ON participants(channel_id)')
             channel_columns = {row['name'] for row in self.db.execute('PRAGMA table_info(channels)')}
             if 'folder' not in channel_columns:
                 self.db.execute('ALTER TABLE channels ADD COLUMN folder TEXT')
@@ -144,6 +147,8 @@ class Room:
         self.legacy_notices = set()
         self.streams = 0
         self.dirty_logs = set()
+        self.dirty_boards = set()
+        self._migrate_channel_scope()
         self.participant_details = ParticipantDetails(self)
         for channel in self.channels():
             try:
@@ -151,6 +156,61 @@ class Room:
             except (OSError, StorageError) as error:
                 print(f'Could not open shared folder for {channel["id"]}: {error}', file=sys.stderr, flush=True)
             self._write_log(channel['id'])
+            self._write_board(channel['id'])
+
+    def _migrate_channel_scope(self):
+        with self.db:
+            initialized = self.db.execute(
+                "INSERT OR IGNORE INTO workspace_state(key,value) VALUES ('channel_isolation','1')"
+            ).rowcount
+            if not initialized:
+                return
+            row = self.db.execute("SELECT id FROM channels ORDER BY (id='general') DESC,rowid LIMIT 1").fetchone()
+            target = row['id'] if row else None
+            if target is None and self.db.execute('SELECT 1 FROM board_posts WHERE deleted_at IS NULL LIMIT 1').fetchone():
+                target = 'ch-recovered-' + uuid4().hex[:8]
+                self.db.execute('INSERT INTO channels(id,name) VALUES (?,?)', (target, 'Recovered workspace'))
+            self.db.execute('UPDATE participants SET channel_id=?', (target,))
+            self.db.execute('UPDATE board_posts SET channel_id=?', (target,))
+            if target is None:
+                self.db.execute("UPDATE participants SET removed_at=COALESCE(removed_at,strftime('%Y-%m-%dT%H:%M:%fZ','now'))")
+                self.db.execute('DELETE FROM board_delivery')
+                self.db.execute('DELETE FROM board_revocations')
+            # Historical transcripts stay intact; pending cross-channel deliveries do not.
+            self.db.execute('''DELETE FROM deliveries WHERE NOT EXISTS (
+                SELECT 1 FROM messages m JOIN participants p ON p.id=deliveries.agent_id
+                WHERE m.id=deliveries.message_id AND p.channel_id=m.channel_id
+            )''')
+
+    def channel_scope(self, channel_id=None, agent=None, *, include_removed=False):
+        if agent is not None:
+            participant = self._participant(agent, include_removed=include_removed)
+            if participant is None:
+                raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
+            if channel_id is not None and participant['channel_id'] != channel_id:
+                raise RequestError('다른 채널의 참가자입니다.', 404, key='errorAgentChannel')
+            channel_id = participant['channel_id']
+        return self._channel(channel_id if channel_id is not None else DEFAULT_CHANNEL)['id']
+
+    def _board_records(self, channel_id, post_id=None):
+        rows = self.db.execute('SELECT id FROM board_posts WHERE channel_id=? AND (? IS NULL OR id=?) ORDER BY id',
+                               (channel_id, post_id, post_id))
+        for row in rows:
+            yield (self.board.post(row['id'], receipts=True, include_deleted=True, channel_id=channel_id),
+                   self.db.execute('SELECT id,name,data FROM board_images WHERE post_id=? ORDER BY id', (row['id'],)))
+
+    def _write_board(self, channel_id, post_id=None, *, strict=False):
+        try:
+            root = Path(self._channel(channel_id)['folder'])
+            if channel_id in self.dirty_boards:
+                post_id = None
+            self.storage.export_board(root, channel_id, self._board_records(channel_id, post_id))
+            self.dirty_boards.discard(channel_id)
+        except (OSError, StorageError) as error:
+            self.dirty_boards.add(channel_id)
+            if strict:
+                raise
+            print(f'Failed to export board for {channel_id}: {error}', file=sys.stderr, flush=True)
 
     def _notify(self):
         self.revision += 1
@@ -162,51 +222,53 @@ class Room:
 
     def publish_board_post(self, payload):
         with self.uploads.lock, self.changed:
+            channel_id = self.channel_scope(payload.get('channel_id'))
             request_id = payload.get('request_id')
             existing = self.db.execute('SELECT id FROM board_posts WHERE request_id=?',
                                        (request_id if isinstance(request_id, str) else None,)).fetchone()
             if existing:
-                post = self.board.post(existing['id'])
+                post = self.board.post(existing['id'], channel_id=channel_id)
             else:
-                post, published = self.board.create(*prepare_post(payload, self.uploads))
+                post, published = self.board.create(*prepare_post(payload, self.uploads), channel_id=channel_id)
                 if published:
                     self._notify_board()
+            self._write_board(channel_id, post['id'])
             self.uploads.discard(payload.get('attachments', payload.get('images', [])))
             return post
 
-    def list_board_posts(self, before):
+    def list_board_posts(self, before=None, channel_id=None, agent=None):
         with self.changed:
-            return self.board.list(before)
+            return self.board.list(before, self.channel_scope(channel_id, agent))
 
-    def delete_board_post(self, post_id):
+    def delete_board_post(self, post_id, channel_id=None):
         with self.changed:
-            post, removed = self.board.delete(post_id)
+            channel_id = self.channel_scope(channel_id)
+            post, removed = self.board.delete(post_id, channel_id)
             if removed:
                 self._notify_board()
+            self._write_board(channel_id, post_id, strict=True)
             return post
 
-    def read_board_post(self, post_id, agent=None):
+    def read_board_post(self, post_id, agent=None, channel_id=None):
         with self.changed:
+            channel_id = self.channel_scope(channel_id, agent)
             if agent is not None:
-                if self._participant(agent) is None:
-                    raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
-                post = self.board.post(post_id, include_deleted=True)
+                post = self.board.post(post_id, include_deleted=True, channel_id=channel_id)
                 if post.get('status') == 'deleted':
                     self.board.acknowledge_revocation(post_id, agent)
                 elif self.board.mark_read(post_id, agent):
                     self._notify_board()
+                    self._write_board(channel_id, post_id)
                 return post
-            return self.board.post(post_id, receipts=True)
+            return self.board.post(post_id, receipts=True, channel_id=channel_id)
 
-    def board_image(self, image_id):
+    def board_image(self, image_id, channel_id=None, agent=None):
         with self.changed:
-            return self.board.image(image_id)
+            return self.board.image(image_id, self.channel_scope(channel_id, agent))
 
-    def chat_attachment(self, attachment_id, agent):
+    def chat_attachment(self, attachment_id, agent=None, channel_id=None):
         with self.changed:
-            if agent is not None and self._participant(agent) is None:
-                raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
-            return self.chat_files.get(attachment_id, agent)
+            return self.chat_files.get(attachment_id, self.channel_scope(channel_id, agent))
 
     def _log_records(self, channel_id):
         cursor = self.db.execute(
@@ -247,6 +309,7 @@ class Room:
             with self.db:
                 self.db.execute('INSERT INTO channels(id,name) VALUES (?,?)', (channel_id, name))
             self._write_log(channel_id)
+            self._write_board(channel_id)
             self._notify()
             return self._channel(channel_id)
 
@@ -281,21 +344,36 @@ class Room:
             with self.changed:
                 channel = self._channel(channel_id)
                 target = self.storage.log_path(Path(channel['folder']))
-                with self.db:
-                    count = self._delete_channel_messages(channel_id)
-                    self.db.execute('DELETE FROM channels WHERE id=?', (channel_id,))
-                    self.storage.log(target, (), replace=True)
+                try:
+                    with self.db:
+                        count = self._delete_channel_messages(channel_id)
+                        self.db.execute("""UPDATE board_posts SET title='',body='',
+                            deleted_at=COALESCE(deleted_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE channel_id=?""", (channel_id,))
+                        self.db.execute("UPDATE board_images SET data=X'' WHERE post_id IN (SELECT id FROM board_posts WHERE channel_id=?)", (channel_id,))
+                        self.db.execute('DELETE FROM board_delivery WHERE post_id IN (SELECT id FROM board_posts WHERE channel_id=?)', (channel_id,))
+                        self.db.execute('DELETE FROM board_revocations WHERE post_id IN (SELECT id FROM board_posts WHERE channel_id=?)', (channel_id,))
+                        self.db.execute("""UPDATE participants SET
+                            removed_at=COALESCE(removed_at,strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE channel_id=?""", (channel_id,))
+                        self._write_board(channel_id, strict=True)
+                        self.db.execute('DELETE FROM channels WHERE id=?', (channel_id,))
+                        self.storage.log(target, (), replace=True)
+                except Exception:
+                    # A rolled-back database may need its filesystem exports rebuilt.
+                    self.dirty_logs.add(channel_id)
+                    self.dirty_boards.add(channel_id)
+                    raise
                 self.dirty_logs.discard(channel_id)
+                self.dirty_boards.discard(channel_id)
                 self._notify()
                 return {'channel_id': channel_id, 'deleted': True, 'cleared': count}
 
     def _check_folder_scope(self, location, default):
-        folders = (location / 'shared', location / 'logs')
+        folders = tuple(location / kind for kind in ('shared', 'logs', 'board'))
         if location != default and location.is_relative_to(self.storage.root):
             raise RequestError('채널 기본 저장소 밖에 별도 폴더를 지정하세요.', 409, key='errorFolderScope')
         for channel in self.channels():
             root = Path(channel['folder'])
-            for existing in (root / 'shared', root / 'logs'):
+            for existing in (root / 'shared', root / 'logs', root / 'board'):
                 if location == root or location.is_relative_to(existing) or any(
                     existing.is_relative_to(folder) or folder.is_relative_to(existing) for folder in folders
                 ):
@@ -323,6 +401,7 @@ class Room:
             with self.changed:
                 self.storage.check_existing_log(target, self._log_records(channel_id))
                 self.storage.log(target, self._log_records(channel_id), replace=True)
+                self.storage.export_board(location, channel_id, self._board_records(channel_id))
                 with self.db:
                     self.db.execute('UPDATE channels SET folder=? WHERE id=?', (
                         None if location == default else str(location), channel_id,
@@ -334,7 +413,8 @@ class Room:
     def storage_action(self, action, payload):
         with self.folder_lock:
             with self.changed:
-                root = Path(self._channel(payload.get('channel_id'))['folder'])
+                channel_id = self.channel_scope(payload.get('channel_id'), payload.get('agent'))
+                root = Path(self._channel(channel_id)['folder'])
             if action == 'open':
                 return self.storage.open_folder(root, payload.get('kind'))
             if action == 'list':
@@ -347,6 +427,8 @@ class Room:
         with self.folder_lock:
             with self.changed:
                 root = Path(self._channel(channel_id)['folder'])
+                if kind == 'board' and channel_id in self.dirty_boards:
+                    self._write_board(channel_id, strict=True)
             if download:
                 return self.storage.open_file(root, kind, relative)
             return self.storage.list_files(root, kind, relative, offset)
@@ -355,8 +437,8 @@ class Room:
         if not isinstance(agent_id, str) or len(agent_id) > 32 or not agent_id.isascii():
             return None
         if include_removed:
-            return self.db.execute('SELECT id,role,name,icon,removed_at FROM participants WHERE id=?', (agent_id,)).fetchone()
-        return self.db.execute('SELECT id,role,name,icon FROM participants WHERE id=? AND removed_at IS NULL', (agent_id,)).fetchone()
+            return self.db.execute('SELECT id,role,name,icon,channel_id,removed_at FROM participants WHERE id=?', (agent_id,)).fetchone()
+        return self.db.execute('SELECT id,role,name,icon,channel_id FROM participants WHERE id=? AND removed_at IS NULL', (agent_id,)).fetchone()
 
     @staticmethod
     def _name(value, label, key):
@@ -376,8 +458,9 @@ class Room:
             raise RequestError('Codex 또는 Claude를 선택하세요.', key='errorRole')
         name = self._name(payload.get('name'), '닉네임', 'errorNickname')
         with self.changed:
+            channel_id = self.channel_scope(payload.get('channel_id'))
             existing = self.db.execute('SELECT * FROM participants').fetchall()
-            active = [row for row in existing if row['removed_at'] is None]
+            active = [row for row in existing if row['removed_at'] is None and row['channel_id'] == channel_id]
             self._check_name(name, active)
             if len(active) >= MAX_PARTICIPANTS:
                 raise RequestError('에이전트는 64개까지 등록할 수 있습니다.', 409, key='errorAgentLimit')
@@ -387,25 +470,30 @@ class Room:
                 number += 1
             agent_id = f'{role}-{number}'
             with self.db:
-                self.db.execute('INSERT INTO participants(id,role,name) VALUES (?,?,?)', (agent_id, role, name))
-            self._notify()
-            return {'id': agent_id, 'role': role, 'name': name, 'icon': 'provider'}
+                self.db.execute('INSERT INTO participants(id,role,name,channel_id) VALUES (?,?,?,?)', (agent_id, role, name, channel_id))
+                self.db.execute('INSERT INTO board_delivery(post_id,agent_id) SELECT id,? FROM board_posts WHERE channel_id=? AND deleted_at IS NULL', (agent_id, channel_id))
+            self._notify_board()
+            self._write_board(channel_id)
+            return {'id': agent_id, 'role': role, 'name': name, 'icon': 'provider', 'channel_id': channel_id}
 
     def rename(self, payload):
         agent_id = payload.get('id')
         name = self._name(payload.get('name'), '닉네임', 'errorNickname')
         with self.changed:
+            channel_id = self.channel_scope(payload.get('channel_id'), agent_id)
             participant = self._participant(agent_id)
             if participant is None:
                 raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
-            self._check_name(name, self.db.execute('SELECT id,name FROM participants WHERE removed_at IS NULL'), agent_id)
+            self._check_name(name, self.db.execute('SELECT id,name FROM participants WHERE removed_at IS NULL AND channel_id=?', (channel_id,)), agent_id)
             with self.db:
                 self.db.execute('UPDATE participants SET name=? WHERE id=?', (name, agent_id))
             self._notify_board()
+            self._write_board(channel_id)
             return dict(participant) | {'name': name}
 
-    def remove_participant(self, agent_id):
+    def remove_participant(self, agent_id, channel_id=None):
         with self.changed:
+            channel_id = self.channel_scope(channel_id, agent_id, include_removed=True)
             participant = self._participant(agent_id, include_removed=True)
             if participant is None:
                 raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
@@ -416,6 +504,7 @@ class Room:
                     """, (agent_id,))
                     self.board.drop_pending(agent_id)
                 self._notify_board()
+                self._write_board(channel_id)
             return {'id': agent_id, 'removed': True}
 
     def set_participant_icon(self, payload):
@@ -423,6 +512,7 @@ class Room:
         if not isinstance(choice, str) or choice not in (*PARTICIPANT_ICONS, 'image'):
             raise RequestError('참가자 아이콘을 선택하세요.', key='errorParticipantIcon')
         with self.uploads.lock, self.changed:
+            self.channel_scope(payload.get('channel_id'), payload.get('id'))
             participant = self._participant(payload.get('id'))
             if participant is None:
                 raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
@@ -446,8 +536,9 @@ class Room:
             self.uploads.discard(uploaded)
             return dict(participant) | {'icon': choice}
 
-    def participant_icon(self, agent_id, version=''):
+    def participant_icon(self, agent_id, version='', channel_id=None):
         with self.changed:
+            self.channel_scope(channel_id, agent_id, include_removed=True)
             participant = self._participant(agent_id, include_removed=True)
             if (participant is None or not participant['icon'].startswith('image:')
                     or (version and participant['icon'] != 'image:' + version)):
@@ -457,24 +548,26 @@ class Room:
                 raise RequestError('아이콘 이미지를 찾을 수 없습니다.', 404, key='errorUnavailable')
             return dict(image)
 
-    def setup(self, agent_id, port, language='en'):
+    def setup(self, agent_id, port, language='en', channel_id=None):
         from relay.cli import connection_setup
         with self.changed:
+            channel_id = self.channel_scope(channel_id, agent_id)
             participant = self._participant(agent_id)
             if participant is None:
                 raise RequestError('등록된 에이전트를 찾을 수 없습니다.', 404, key='errorAgentMissing')
             return {
-                **dict(participant), **connection_setup(port, agent_id, participant['role'], language=language),
+                **dict(participant), **connection_setup(port, agent_id, participant['role'], language=language, channel_id=channel_id),
                 'icon_options': PARTICIPANT_ICONS,
                 'icon_upload_extensions': ['.png', '.jpg', '.gif'],
             }
 
-    def participants(self, channel_id=None):
+    def participants(self, channel_id=None, agent=None):
         with self.changed:
-            scope = 'AND m.channel_id=?' if channel_id else ''
-            params = (self._channel(channel_id)['id'],) if channel_id else ()
+            channel_id = self.channel_scope(channel_id, agent)
+            scope = 'AND m.channel_id=?'
+            params = (channel_id,)
             pending = dict(self.db.execute(f'SELECT d.agent_id, COUNT(*) {PENDING_MESSAGES} {scope} GROUP BY d.agent_id', params))
-            participants = self.db.execute('SELECT id,role,name,icon FROM participants WHERE removed_at IS NULL ORDER BY rowid').fetchall()
+            participants = self.db.execute('SELECT id,role,name,icon,channel_id FROM participants WHERE removed_at IS NULL AND channel_id=? ORDER BY rowid', (channel_id,)).fetchall()
             return [
                 dict(p) | {
                     'waiting': p['id'] in self.waiters and (
@@ -492,7 +585,7 @@ class Room:
             return []
         placeholders = ','.join('?' for _ in ids)
         return [dict(row) for row in self.db.execute(f'''
-            SELECT id,role,name,icon FROM participants WHERE removed_at IS NOT NULL AND id IN ({placeholders})
+            SELECT id,role,name,icon,channel_id FROM participants WHERE id IN ({placeholders})
         ''', tuple(ids))]
 
     def snapshot(self, channel_id, *, viewer_address=None):
@@ -507,7 +600,7 @@ class Room:
                 "channel": channel,
                 "channels": self.channels(),
                 "participants": self.participants(channel_id) if channel else [],
-                "users": self.users.snapshot(),
+                "users": self.users.snapshot(channel_id),
                 "viewer": self.users.identity(viewer_address),
                 "archived_participants": self._archived_participants(rows),
                 "total_messages": self.db.execute('SELECT COUNT(*) FROM messages WHERE channel_id=?', (channel_id,)).fetchone()[0],
@@ -522,7 +615,7 @@ class Room:
         )
         message_id = cursor.lastrowid
         if recipient == 'all':
-            self.db.execute('INSERT INTO deliveries(message_id,agent_id) SELECT ?, id FROM participants WHERE removed_at IS NULL', (message_id,))
+            self.db.execute('INSERT INTO deliveries(message_id,agent_id) SELECT ?, id FROM participants WHERE removed_at IS NULL AND channel_id=?', (message_id, channel_id))
         elif recipient is not None:
             self.db.execute('INSERT INTO deliveries(message_id,agent_id) VALUES (?,?)', (message_id, recipient))
         if files:
@@ -565,9 +658,9 @@ class Room:
                             raise RequestError('전송 요청 ID가 이미 사용 중입니다.', 409, key='errorRequestUsed')
                         return {"message": self.chat_files.attach_metadata((existing,))[0], "duplicate": True}
                 if recipient == 'all':
-                    if self.db.execute('SELECT 1 FROM participants WHERE removed_at IS NULL LIMIT 1').fetchone() is None:
+                    if self.db.execute('SELECT 1 FROM participants WHERE removed_at IS NULL AND channel_id=? LIMIT 1', (channel_id,)).fetchone() is None:
                         raise RequestError('메시지를 받을 에이전트를 먼저 추가하세요.', 409, key='errorAddAgentFirst')
-                elif self._participant(recipient) is None:
+                elif self._participant(recipient) is None or self._participant(recipient)['channel_id'] != channel_id:
                     raise RequestError('보낼 대상을 선택하세요.', key='errorChooseRecipient')
                 files = prepare_chat_files(attachments, self.uploads)
                 with self.db:
@@ -590,11 +683,13 @@ class Room:
                 if existing:
                     return {"message": self.chat_files.attach_metadata((existing,))[0], "duplicate": True}
                 channel_id = original['channel_id']
+                self.channel_scope(channel_id, sender)
                 files = prepare_chat_files(attachments, self.uploads)
                 body, shared_files = self._shared_png_reply(channel_id, body, len(files))
                 files.extend(shared_files)
                 recipient = payload.get('next_agent') if handoff else None
-                if recipient is not None and (recipient == sender or self._participant(recipient) is None):
+                if recipient is not None and (recipient == sender or self._participant(recipient) is None
+                                              or self._participant(recipient)['channel_id'] != channel_id):
                     raise RequestError('다른 등록 에이전트를 수신자로 선택하세요.', 409)
                 with self.db:
                     message = self._insert(channel_id, sender, recipient, body.strip(), reply_to, files=files)
@@ -658,8 +753,9 @@ class Room:
                 raise RequestError('먼저 에이전트를 등록하세요.', 404)
             if participant['removed_at'] is not None:
                 return {'state': 'removed'}
-            scope = 'AND m.channel_id=?' if channel_id else ''
-            params = (agent, self._channel(channel_id)['id']) if channel_id else (agent,)
+            channel_id = self.channel_scope(channel_id, agent)
+            scope = 'AND m.channel_id=?'
+            params = (agent, channel_id)
             if seconds and agent in self.waiters:
                 raise RequestError('이 ID는 이미 대기 중입니다. 각 대화에 다른 에이전트 ID를 사용하세요.', 409)
             if seconds:
@@ -672,10 +768,10 @@ class Room:
                         return {'state': 'removed'}
                     if channel_id:
                         self._channel(channel_id)
-                    revoked = self.board.revoked(agent)
+                    revoked = self.board.revoked(agent, channel_id)
                     if revoked:
                         return revoked
-                    notice = self.board.unread(agent)
+                    notice = self.board.unread(agent, channel_id)
                     if notice:
                         return {'state': 'board_post', 'post': notice}
                     message = self.db.execute(
@@ -799,13 +895,15 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             raise RequestError('유효한 게시글 또는 이미지 번호를 입력하세요.', key='errorPostId') from None
 
-    def _events(self):
+    def _events(self, channel_id=DEFAULT_CHANNEL, client_id=None):
         with self.room.changed:
+            if channel_id is not None:
+                self.room._channel(channel_id)
             if self.room.streams >= 12:
                 raise RequestError("브라우저 연결이 너무 많습니다.", 429)
             self.room.streams += 1
+            lease = self.room.users.open_session(self.client_address[0], channel_id, client_id or uuid4().hex)
         try:
-            self.room.users.connect(self.client_address[0])
             self.close_connection = True
             self.connection.settimeout(8)
             self.send_response(200)
@@ -827,7 +925,7 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             with self.room.changed:
                 self.room.streams -= 1
-                self.room.users.disconnect(self.client_address[0])
+                self.room.users.close_session(lease)
 
     def _saved_language(self):
         try:
@@ -839,8 +937,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self._check_local()
             url = urlsplit(self.path)
-            params = parse_qs(url.query, keep_blank_values=url.path == '/api/room')
+            params = parse_qs(url.query, keep_blank_values=url.path in ('/api/room', '/api/events'))
             channel_id = params.get('channel', [None])[0]
+            agent = params.get('agent', [None])[0]
             if url.path == '/upload-policy.js':
                 code = 'const uploadPolicy = Object.freeze(' + json.dumps(upload_policy()) + ');'
                 self._bytes(200, code.encode('utf-8'), 'text/javascript; charset=utf-8')
@@ -856,11 +955,17 @@ class Handler(BaseHTTPRequestHandler):
                 selected = params.get('channel', [DEFAULT_CHANNEL])[0] or None
                 self._json(self.room.snapshot(selected, viewer_address=self.client_address[0]))
             elif url.path == "/api/events":
-                self._events()
+                client_id = params.get('client', [None])[0]
+                if client_id is not None and (not client_id or len(client_id) > 64):
+                    raise RequestError('브라우저 연결 ID를 확인하세요.', key='errorRequestId')
+                self._events(params.get('channel', [DEFAULT_CHANNEL])[0] or None, client_id)
             elif url.path == '/api/settings':
                 self._json({'language': self._saved_language()})
             elif url.path == '/api/channels':
-                self._json({'channels': self.room.channels()})
+                with self.room.changed:
+                    channels = ([self.room._channel(self.room.channel_scope(channel_id, agent))]
+                                if agent else self.room.channels())
+                self._json({'channels': channels})
             elif url.path in ('/api/files', '/api/files/download'):
                 kind = params.get('kind', ['shared'])[0]
                 relative = params.get('path', [''])[0]
@@ -874,22 +979,22 @@ class Handler(BaseHTTPRequestHandler):
                 language = params.get('lang', [None])[0]
                 if language not in LANGUAGES:
                     language = self._saved_language()
-                self._json(self.room.setup(agent_id, self.server.server_port, language))
+                self._json(self.room.setup(agent_id, self.server.server_port, language, channel_id))
             elif url.path == '/api/participants':
-                self._json({'participants': self.room.participants(channel_id)})
+                self._json({'participants': self.room.participants(channel_id, agent)})
             elif url.path == '/api/participants/icon':
-                image = self.room.participant_icon(params.get('agent', [''])[0], params.get('v', [''])[0])
+                image = self.room.participant_icon(params.get('agent', [''])[0], params.get('v', [''])[0], channel_id)
                 self._bytes(200, image['data'], image['mime_type'])
             elif url.path == '/api/board':
-                self._json(self.room.list_board_posts(self._number(params, 'before')))
+                self._json(self.room.list_board_posts(self._number(params, 'before'), channel_id, agent))
             elif url.path == '/api/board/post':
-                self._json(self.room.read_board_post(self._number(params, 'id')))
+                self._json(self.room.read_board_post(self._number(params, 'id'), channel_id=channel_id))
             elif url.path in ('/api/board/image', '/api/board/attachment'):
-                image = self.room.board_image(self._number(params, 'id'))
+                image = self.room.board_image(self._number(params, 'id'), channel_id, agent)
                 self._attachment(image, params.get('download') == ['1'])
             elif url.path == '/api/messages/attachment':
                 agent = params.get('agent', [None])[0]
-                attachment = self.room.chat_attachment(self._number(params, 'id'), agent)
+                attachment = self.room.chat_attachment(self._number(params, 'id'), agent, channel_id)
                 self._attachment(attachment, params.get('download') == ['1'])
             elif url.path == "/api/wait":
                 try:
@@ -963,9 +1068,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == '/api/board':
                 self._json(self.room.publish_board_post(payload), 201)
             elif self.path == '/api/board/delete':
-                self._json(self.room.delete_board_post(payload.get('post_id')))
+                self._json(self.room.delete_board_post(payload.get('post_id'), payload.get('channel_id')))
             elif self.path == '/api/board/read':
-                self._json(self.room.read_board_post(payload.get('post_id'), payload.get('agent') or ''))
+                self._json(self.room.read_board_post(payload.get('post_id'), payload.get('agent') or '', payload.get('channel_id')))
             elif self.path == '/api/participants':
                 self._json(self.room.register(payload), 201)
             elif self.path == '/api/participants/rename':
@@ -973,7 +1078,7 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == '/api/participants/icon':
                 self._json(self.room.set_participant_icon(payload))
             elif self.path == '/api/participants/delete':
-                self._json(self.room.remove_participant(payload.get('id')))
+                self._json(self.room.remove_participant(payload.get('id'), payload.get('channel_id')))
             elif self.path == '/api/channels':
                 self._json(self.room.create_channel(payload), 201)
             elif self.path == '/api/channels/rename':

@@ -217,6 +217,10 @@
           <span><strong>logs/</strong><small data-i18n="logsHint">보낸 메시지와 답변이 chat.jsonl에 자동 저장됩니다.</small></span>
           <svg class="icon" aria-hidden="true"><use href="/vendor/icons.svg#arrow-right"></use></svg>
         </a>
+        <a class="folder-shortcut" id="board-link" target="_blank" rel="noopener">
+          <span><strong>board/</strong><small data-i18n="boardFolderHint">이 채널의 게시글과 첨부 파일이 저장됩니다.</small></span>
+          <svg class="icon" aria-hidden="true"><use href="/vendor/icons.svg#arrow-right"></use></svg>
+        </a>
       </nav>
       <details id="server-folder-settings" class="server-folder-settings">
         <summary data-i18n="serverFolderSettings">서버 PC의 저장 위치 설정</summary>
@@ -244,6 +248,12 @@
         <p data-i18n="logsHint">보낸 메시지와 답변이 chat.jsonl에 자동 저장됩니다.</p>
         <pre id="logs-path" tabindex="0"></pre>
         <button class="button secondary open-folder" type="button" data-folder="logs" data-i18n="openLogs">logs 열기</button>
+      </section>
+      <section>
+        <div class="setup-label"><strong>board</strong><button class="button secondary copy-button" type="button" data-copy="board-path" data-feedback="folders-feedback" data-i18n="copyPath">경로 복사</button></div>
+        <p data-i18n="boardFolderHint">이 채널의 게시글과 첨부 파일이 저장됩니다.</p>
+        <pre id="board-path" tabindex="0"></pre>
+        <button class="button secondary open-folder" type="button" data-folder="board" data-i18n="openBoardFolder">board 열기</button>
       </section>
       <p class="dialog-feedback" id="folders-feedback" role="status"></p>
       </details>

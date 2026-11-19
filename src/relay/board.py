@@ -76,23 +76,27 @@ class Board:
         if 'deleted_at' not in columns:
             with db:
                 db.execute('ALTER TABLE board_posts ADD COLUMN deleted_at TEXT')
+        with db:
+            if 'channel_id' not in columns:
+                db.execute("ALTER TABLE board_posts ADD COLUMN channel_id TEXT DEFAULT 'general'")
+            db.execute('CREATE INDEX IF NOT EXISTS board_by_channel ON board_posts(channel_id,id)')
 
-    def create(self, request_id, title, body, images):
+    def create(self, request_id, title, body, images, channel_id='general'):
         existing = self.db.execute('SELECT id FROM board_posts WHERE request_id=?', (request_id,)).fetchone()
         if existing:
-            return self.post(existing['id']), False
+            return self.post(existing['id'], channel_id=channel_id), False
         with self.db:
             post_id = self.db.execute(
-                'INSERT INTO board_posts(request_id,title,body) VALUES (?,?,?)', (request_id, title, body)
+                'INSERT INTO board_posts(request_id,title,body,channel_id) VALUES (?,?,?,?)', (request_id, title, body, channel_id)
             ).lastrowid
             self.db.executemany(
                 'INSERT INTO board_images(post_id,name,mime_type,data) VALUES (?,?,?,?)',
                 ((post_id, name, mime, file_data(data)) for name, mime, data in images),
             )
-            self.db.execute('INSERT INTO board_delivery(post_id,agent_id) SELECT ?,id FROM participants WHERE removed_at IS NULL', (post_id,))
-        return self.post(post_id), True
+            self.db.execute('INSERT INTO board_delivery(post_id,agent_id) SELECT ?,id FROM participants WHERE removed_at IS NULL AND channel_id=?', (post_id, channel_id))
+        return self.post(post_id, channel_id=channel_id), True
 
-    def list(self, before=None):
+    def list(self, before=None, channel_id='general'):
         scope = 'AND b.id < ?' if before is not None else ''
         params = (record_id(before),) if before is not None else ()
         rows = self.db.execute(f'''
@@ -100,22 +104,22 @@ class Board:
                 (SELECT COUNT(*) FROM board_images i WHERE i.post_id=b.id) AS image_count,
                 (SELECT COUNT(*) FROM board_delivery d WHERE d.post_id=b.id AND d.read_at IS NOT NULL) AS read_count,
                 (SELECT COUNT(*) FROM board_delivery d WHERE d.post_id=b.id) AS recipient_count
-            FROM board_posts b WHERE b.deleted_at IS NULL {scope} ORDER BY b.id DESC LIMIT ?
-        ''', (*params, PAGE_SIZE + 1)).fetchall()
+            FROM board_posts b WHERE b.channel_id=? AND b.deleted_at IS NULL {scope} ORDER BY b.id DESC LIMIT ?
+        ''', (channel_id, *params, PAGE_SIZE + 1)).fetchall()
         return {
             'posts': [dict(row) for row in rows[:PAGE_SIZE]],
             'next_before': rows[PAGE_SIZE - 1]['id'] if len(rows) > PAGE_SIZE else None,
         }
 
-    def post(self, post_id, receipts=False, include_deleted=False):
+    def post(self, post_id, receipts=False, include_deleted=False, channel_id='general'):
         row = self.db.execute(
-            'SELECT id,title,body,created_at,deleted_at FROM board_posts WHERE id=?', (record_id(post_id),)
+            'SELECT id,channel_id,title,body,created_at,deleted_at FROM board_posts WHERE id=? AND channel_id=?', (record_id(post_id), channel_id)
         ).fetchone()
         if row is None:
             raise BoardError('게시글을 찾을 수 없습니다.', 404, key='errorPostMissing')
         if row['deleted_at']:
             if include_deleted:
-                return {'id': post_id, 'status': 'deleted', 'deleted_at': row['deleted_at']}
+                return {'id': post_id, 'channel_id': channel_id, 'status': 'deleted', 'deleted_at': row['deleted_at']}
             raise BoardError('삭제된 게시글입니다.', 410, key='errorPostDeleted')
         images = self.db.execute(
             'SELECT id,name,mime_type,length(data) AS size_bytes FROM board_images WHERE post_id=? ORDER BY id', (post_id,)
@@ -129,14 +133,15 @@ class Board:
             ''', (post_id,))]
         return result
 
-    def unread(self, agent):
+    def unread(self, agent, channel_id='general'):
         row = self.db.execute('''
             SELECT d.post_id FROM board_delivery d JOIN board_posts b ON b.id=d.post_id
-            WHERE d.agent_id=? AND d.read_at IS NULL AND b.deleted_at IS NULL ORDER BY d.post_id LIMIT 1
-        ''', (agent,)).fetchone()
-        return self.post(row['post_id']) if row else None
+            WHERE d.agent_id=? AND b.channel_id=? AND d.read_at IS NULL AND b.deleted_at IS NULL ORDER BY d.post_id LIMIT 1
+        ''', (agent, channel_id)).fetchone()
+        return self.post(row['post_id'], channel_id=channel_id) if row else None
 
-    def delete(self, post_id):
+    def delete(self, post_id, channel_id='general'):
+        self.post(post_id, include_deleted=True, channel_id=channel_id)
         with self.db:
             changed = self.db.execute("""
                 UPDATE board_posts SET title='',body='',deleted_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
@@ -144,16 +149,16 @@ class Board:
             """, (record_id(post_id),)).rowcount > 0
             if changed:
                 # Keep image IDs reserved so an old link can never open a different attachment.
-                self.db.execute("UPDATE board_images SET name='',data=X'' WHERE post_id=?", (post_id,))
-                self.db.execute('INSERT INTO board_revocations(post_id,agent_id) SELECT ?,id FROM participants WHERE removed_at IS NULL', (post_id,))
-        return self.post(post_id, include_deleted=True), changed
+                self.db.execute("UPDATE board_images SET data=X'' WHERE post_id=?", (post_id,))
+                self.db.execute('INSERT INTO board_revocations(post_id,agent_id) SELECT ?,id FROM participants WHERE removed_at IS NULL AND channel_id=?', (post_id, channel_id))
+        return self.post(post_id, include_deleted=True, channel_id=channel_id), changed
 
-    def revoked(self, agent):
+    def revoked(self, agent, channel_id='general'):
         row = self.db.execute('''
             SELECT b.id,b.deleted_at FROM board_revocations r JOIN board_posts b ON b.id=r.post_id
-            WHERE r.agent_id=? ORDER BY b.deleted_at,b.id LIMIT 1
-        ''', (agent,)).fetchone()
-        return {'state': 'board_deleted', 'post_id': row['id'], 'deleted_at': row['deleted_at']} if row else None
+            WHERE r.agent_id=? AND b.channel_id=? ORDER BY b.deleted_at,b.id LIMIT 1
+        ''', (agent, channel_id)).fetchone()
+        return {'state': 'board_deleted', 'channel_id': channel_id, 'post_id': row['id'], 'deleted_at': row['deleted_at']} if row else None
 
     def acknowledge_revocation(self, post_id, agent):
         with self.db:
@@ -170,10 +175,10 @@ class Board:
                 WHERE post_id=? AND agent_id=? AND read_at IS NULL
             """, (post_id, agent)).rowcount > 0
 
-    def image(self, image_id):
+    def image(self, image_id, channel_id='general'):
         row = self.db.execute(
             '''SELECT i.name,i.mime_type,i.data FROM board_images i JOIN board_posts b ON b.id=i.post_id
-               WHERE i.id=? AND b.deleted_at IS NULL''', (record_id(image_id),)
+               WHERE i.id=? AND b.channel_id=? AND b.deleted_at IS NULL''', (record_id(image_id), channel_id)
         ).fetchone()
         if row is None:
             raise BoardError('첨부 이미지를 찾을 수 없습니다.', 404, key='errorImageMissing')

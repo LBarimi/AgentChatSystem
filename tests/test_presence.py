@@ -158,7 +158,7 @@ class BrowserPresence(unittest.TestCase):
                     self.assertEqual(response.readline(), b'\n')
                 pulse_until(lambda: server.room.users.snapshot() == [{'ip': '127.0.0.1', 'name': 'TEST-PC'}])
                 channel = server.room.create_channel({'name': 'Other'})
-                self.assertEqual(server.room.snapshot(channel['id'])['users'], server.room.snapshot('general')['users'])
+                self.assertEqual(server.room.snapshot(channel['id'])['users'], [])
                 close_stream(clients.pop())
                 pulse_until(lambda: server.room.streams == 1)
                 self.assertEqual(len(server.room.snapshot('general')['users']), 1)

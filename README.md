@@ -15,13 +15,13 @@ You need **Python 3.10 or later** on Windows, Linux, or macOS. Put `python` on P
 3. Click **Codex** or **Claude** under **Participants** to copy that agent's MCP configuration and listening prompt.
 4. Connect the agent, send it the listening prompt, then choose the agent in **Recipient** and send a task.
 
-Use **Add agent** for extra sessions. Give each session its own agent ID, even when two sessions use the same app.
+Use **Add agent** in the selected channel for extra sessions. Each agent belongs to exactly one channel and has a unique agent ID, even when sessions use the same app or nickname. New channels start with an empty participant list; the initial General channel includes Codex and Claude.
 
 Codex participant cards show the model and reasoning effort from the last detected linked local session. The app checks Codex's local session index and logs every five seconds, matching the listening prompt's agent marker. Values are shown as **Unknown** until a matching session provides them; unrelated sessions and global defaults are not substituted. OpenAI and Anthropic icons identify each provider.
 
 Click a participant card, choose a **Participant icon**, and click **Save**. Use the provider logo, one of seven built-in symbols, or **Choose image** to upload a PNG, JPG, or GIF up to 10 MiB. The preview changes before saving. Icons are stored in the server database and appear on participant cards and chat messages across browsers and restarts. Select **Provider logo (default)** to reset. Removed participants retain their icons in existing chat history.
 
-The **Connected users** list below the participant cards shows browsers currently connected to ACS, grouped by IP so multiple tabs from one address appear once. It displays the computer name when the server can resolve it, otherwise the IP. Local loopback connections use the server computer’s name; LAN names depend on the network’s reverse name lookup. Name lookup runs in the background without delaying chat. Users disappear after the server detects that their last browser connection has closed. This list is shared across channels and is separate from AI participants.
+The **Connected users** list shows browsers viewing the selected channel, grouped by IP within that channel. Changing channels moves that tab’s presence immediately; separate tabs can appear in different channels. It displays the computer name when resolvable, otherwise the IP. Local loopback connections use the server computer’s name; LAN names depend on reverse name lookup. Lookup runs in the background without delaying chat. Users disappear after their last connection to that channel closes. A browser with no selected channel does not appear in any channel.
 
 Your entry is marked **(You)** in yellow. New human messages save the sender’s computer name (or IP when unavailable), and your messages have yellow names, avatars, and a tinted background. Self identification follows the actual connection IP, matching the connected-user list; names alone never identify a sender. Saved names remain available after disconnects and server restarts. Older messages without sender details display **User** and are not marked as yours.
 
@@ -73,15 +73,17 @@ Use the received `message.id` in place of `1` and save message files as UTF-8. P
 
 ## Work in channels
 
-Choose a channel and send a message to one agent or **Everyone**. The recipient starts as **Everyone** and changes only when you select it. Your browser remembers that selection across channels, participant updates, language changes, and page reloads. If the selected agent is removed, the selection stays visible as unavailable and sending is disabled until you choose another target. Each recipient can reply once, and an agent can explicitly hand its reply to another agent with `next_agent`. Use **Enter** to send and **Shift+Enter** for a new line.
+![A channel with its own conversation, Codex and Claude participants, and connected users](media/readme/channel-isolation.jpg)
+
+Each channel has its own participants, connected users, conversation, board, and files. Send a message to one of its agents or **Everyone** in that channel. Each channel starts with **Everyone** selected, and your browser remembers your manual recipient choice separately for each channel across participant updates, language changes, and reloads. If the selected agent is removed, sending stays disabled until you choose another target. Each recipient can reply once; `next_agent` can hand work only to another participant in the same channel. Use **Enter** to send and **Shift+Enter** for a new line.
 
 Participant cards show a red **(Disconnected)** label next to the nickname whenever an agent is not actively waiting for messages in the selected channel. It disappears when `receive` starts waiting again. This reflects the current receive state, including pauses while an agent works on a task.
 
 Drag the inner edge of the channels or participants panel to resize it. The browser remembers each width. You can also focus a divider and use the arrow keys, or double-click it to reset the width. Small screens keep the slide-out panels.
 
-Use the **⋮** menu beside any channel, including the initial **General** channel, to rename or delete it. Deletion requires confirmation and removes its messages, attachments, chat log, and pending deliveries; shared files stay on disk. Deleting the selected channel hides the chat and participant panels until you select or create another channel. Participant registrations and the board remain available. Deleted channels are not restored when the server restarts.
+Use the **⋮** menu beside any channel, including the initial **General** channel, to rename or delete it. Deletion requires confirmation and removes that channel’s participants, board posts, messages, attachments, chat log, and pending deliveries; shared files stay on disk. Its agents receive `state=removed`. Deleting the selected channel hides the chat and participant panels until you select or create another channel. Other channels remain intact. Deleted channels are not restored when the server restarts.
 
-Terminal `start` and `status` commands default to `general`; after deleting it, pass an existing channel ID with `--channel`. MCP `receive` listens across channels when `channel_id` is omitted, and replies stay in the original message’s channel.
+Terminal `start`, `status`, `add`, and `board` commands default to `general`; use `--channel` to select another channel. MCP uses the registered agent’s channel automatically: `receive`, participant and channel listings, board reads, attachments, and shared-file tools stay in that channel. Requests for other channels are rejected. Setup and listening prompts include the channel binding in all seven languages.
 
 Chat, board posts, and AI replies share one attachment policy: **up to 30 files per message or post, 10 MiB (10,485,760 bytes) per file**. Supported extensions are **`.png`, `.jpg`, `.txt`, `.csv`, `.xlsx`, `.xlsm`, `.json`, `.xml`, `.pdf`, `.pptx`, `.mp4`, and `.gif`**; extension matching is case-insensitive. Other extensions, including new MD and WebP uploads, are rejected. Existing attachments remain readable.
 
@@ -96,11 +98,11 @@ If `reply` does not offer the `attachments` argument, place the PNG in the recei
 
 </details>
 
-**Channel folders** shows links to the current channel’s [shared files and chat logs](#local-data), each opening a dedicated download page in a new tab. Use **Clear chat** to remove the current channel's messages, attachments, and pending deliveries.
+**Channel folders** shows the current channel’s [shared files, chat logs, and board files](#local-data), each opening a dedicated download page. **Clear chat** removes only that channel’s messages, chat attachments, and pending message deliveries; its participants and board remain.
 
 ## Share instructions on the board
 
-Use **Board → Write post** for instructions that apply across channels. Posts use the same attachment formats and limits as chat. Agents receive a `board_post` event, mark the post as read with `read_board_post`, and read attachments with `read_board_image` (the tool name is retained for compatibility). Deleting a post sends a `board_deleted` notice so agents can stop using its instructions.
+Use **Board → Write post** for instructions shared within the selected channel. Only that channel’s agents receive `board_post`, mark posts as read with `read_board_post`, and open attachments with `read_board_image` (the name is retained for compatibility). Newly added agents receive existing active posts in their channel. Deleting a post sends `board_deleted` only to that channel’s agents. Switching channels clears the board view and unsent board draft; in-flight submissions keep their original channel.
 
 ![The board in Ocean theme showing three sample posts and their agent read counts](media/readme/board.png)
 
@@ -132,26 +134,33 @@ On another device connected to the same router or office network, open `http://<
 
 The app accepts private IPv4 ranges `10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`, alongside loopback. It rejects public client addresses, unrelated Host headers, and cross-origin requests. If the host firewall blocks the connection, allow inbound TCP on the configured port for the trusted private network and local subnet. Guest Wi-Fi or office network isolation can also prevent devices from reaching one another.
 
-LAN visitors share the chat and board; there is no separate sign-in, and HTTP traffic is unencrypted. Use a trusted network. Channel files can be browsed and downloaded remotely; shared-file writes, storage location changes, and opening the server's file manager require a loopback connection. Codex, Claude, and MCP still run on the server computer. If a browser cannot copy a setup prompt over LAN HTTP, expand the displayed text and copy it manually.
+LAN visitors within a channel share its chat and board; there is no separate sign-in, and HTTP traffic is unencrypted. Use a trusted network. Channel files can be browsed and downloaded remotely; shared-file writes, storage location changes, and opening the server's file manager require a loopback connection. Codex, Claude, and MCP still run on the server computer. If a browser cannot copy a setup prompt over LAN HTTP, expand the displayed text and copy it manually.
 
 ## Local data
 
 The workspace stores channels, messages, attachments, board posts, and participant icons in `var/room.sqlite3`. The `channels` table holds channel IDs, names, and storage locations. The `workspace_state` table records `channels_initialized`, so **General** (작업실 in Korean) is created only during the database’s first initialization. An empty channel list after deletion remains empty after restarting. Your browser stores the selected channel in local storage under `relay-channel`, including an empty selection; channel data is not stored in `bin/settings.ini`.
 
-Each channel has its own folders for shared files and the UTF-8 JSON Lines chat log.
+Each channel root contains all three folders below. The database remains the source of truth; `board/` contains UTF-8 JSON exports and original attachment files, updated when posts or read receipts change. Deleted posts leave a tombstone in `post.json` and their exported attachments are removed. Changing the channel storage location regenerates both logs and board exports under the new root, including when shared-file copying is disabled. Previous folders remain on disk as copies; manage those old copies separately.
 
 ```text
 var/channels/<channel-id>/
 ├── shared/
-└── logs/
-    └── chat.jsonl
+├── logs/
+│   └── chat.jsonl
+└── board/
+    ├── channel.json
+    └── <post-id>/
+        ├── post.json
+        └── <attachment-id>-<filename>
 ```
 
-Open **Channel folders**, then select `shared/` or `logs/` to browse files in a separate tab. Follow folders such as `shared/ → docs/`, use the breadcrumb links or **Parent folder**, and download files by name or with the download button. Folder URLs preserve the channel, directory, and page, so browser history, refresh, bookmarks, and sharing within the same LAN work normally. The page uses the same themes and seven languages as chat. Folders appear first, followed by files sorted by name, with aligned name, size, and download columns. Listings have 200 entries per page; downloads support binary files and are streamed without the MCP text-size limit. File paths stay inside the selected channel folder, and symbolic links are excluded.
+Open **Channel folders**, then select `shared/`, `logs/`, or `board/` to browse files in a separate tab. Follow folders such as `shared/ → docs/`, use the breadcrumb links or **Parent folder**, and download files by name or with the download button. Folder URLs preserve the channel, directory, and page, so browser history, refresh, bookmarks, and sharing within the same LAN work normally. The page uses the same themes and seven languages as chat. Folders appear first, followed by files sorted by name, with aligned name, size, and download columns. Listings have 200 entries per page; downloads support binary files and are streamed without the MCP text-size limit. File paths stay inside the selected channel folder, and symbolic links are excluded.
 
 When visiting through `127.0.0.1` or `localhost`, expand **Storage settings on the server computer** to change the storage location, copy existing shared files, or open the server’s file manager. On Linux, opening the file manager requires a graphical desktop session with `xdg-open`. Agents receive the channel paths with each message. Through MCP, `list_shared`, `read_shared`, and `write_shared` handle shared files, with a 256 KiB limit for each UTF-8 text read or write.
 
 ![A dedicated channel download page showing shared/docs, a subfolder, file sizes, and download buttons](media/readme/channel-files.jpg)
+
+On the first upgrade to channel isolation, existing global participants and board posts move to General, or to the oldest remaining channel if General was deleted. Historical chat stays in its original channels; pending deliveries to agents outside those channels are canceled. If no channels remain but old board posts exist, a **Recovered workspace** channel preserves them. Otherwise an empty workspace stays empty. The migration runs once, and new channels receive independent participants and boards.
 
 ## Build and package
 

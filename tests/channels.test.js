@@ -68,3 +68,34 @@ test('saved empty selections survive reload; only a fresh browser selects Genera
     }), expected);
   }
 });
+
+test('switching immediately clears the previous roster and recipient while the new channel is loading', () => {
+  const nodes = new Map();
+  const el = id => {
+    if (!nodes.has(id)) nodes.set(id, { textContent: 'Old channel', hidden: false, children: ['Old agent'],
+      querySelector: () => null, replaceChildren(...items) { this.children = items; } });
+    return nodes.get(id);
+  };
+  const dialog = () => ({ dataset: {}, close() {} });
+  const state = {
+    activeChannel: 'A', current: { channel: { id: 'A' } }, drafts: new Map(), input: { value: 'A draft' },
+    chatFiles: [], chatDraftId: null, setupRequest: 0, el, recipient: el('recipient'),
+    messages: el('messages'), scrollRegion: {}, CSS: { escape: value => value },
+    localStorage: { setItem() {} }, t: key => key,
+    RecipientSelection: class { constructor() { this.id = 'all'; this.name = ''; } },
+    Option: class { constructor(text, value) { this.text = text; this.value = value; } },
+    clearChatDialog: dialog(), foldersDialog: dialog(), setupDialog: dialog(), joinDialog: dialog(),
+    agentDeleteDialog: dialog(), channelDeleteDialog: dialog(), channelDialog: dialog(),
+    closeChannelMenu() {}, resetBoardChannel() {}, showChatFiles() {}, showMessage() {},
+    showSidePanel() {}, showChannelView() {}, refreshControls() {}, connectRoomStream() {}, loadRoom() {},
+  };
+  vm.createContext(state);
+  vm.runInContext(app.slice(app.indexOf('function switchChannel('), app.indexOf('\nfunction showChatFiles(')), state);
+  state.switchChannel('B');
+  assert.equal(state.current, null);
+  assert.deepEqual(el('roster').children, []);
+  assert.deepEqual(el('messages').children, []);
+  assert.equal(el('recipient').children[0].value, 'all');
+  assert.equal(state.input.value, '');
+  assert.equal(state.drafts.get('A').body, 'A draft');
+});

@@ -185,7 +185,7 @@
   "errorLocalFolder": "Enter an absolute local path beginning with a drive letter.",
   "errorFolderName": "The folder path contains an invalid name.",
   "errorFolderCheck": "Could not verify the folder path.",
-  "errorSharedOrLogs": "Choose the shared or logs folder.",
+  "errorSharedOrLogs": "Choose the shared, logs, or board folder.",
   "errorCopyAccess": "Cannot access the current shared folder. Turn off file copying to change the location.",
   "errorCopyName": "An item with this name exists at the new location: {path}",
   "errorCopyContents": "A file with different contents exists at the new location: {path}",
@@ -194,7 +194,7 @@
   "channelActions": "Actions for {name}",
   "renameChannel": "Rename channel",
   "deleteChannel": "Delete channel",
-  "deleteChannelConfirm": "Delete this channel, its conversation, attachments, chat log, and pending messages. Files in the shared folder are kept. This cannot be undone.",
+  "deleteChannelConfirm": "Delete this channel and its participants, board posts, conversation, attachments, chat log, and pending messages. Shared files are kept. This cannot be undone.",
   "resizeChannels": "Resize channels panel",
   "resizeParticipants": "Resize participants panel",
   "resizePanelHint": "Drag or use the arrow keys to resize. Double-click to reset.",
@@ -265,5 +265,8 @@
   "agentDisconnected": "(Disconnected)",
   "agentDisconnectedHint": "Not currently listening for messages in this channel.",
   "noChannelSelected": "No channel selected",
-  "chooseChannelHint": "Select a channel on the left or create one to start a conversation."
+  "chooseChannelHint": "Select a channel on the left or create one to start a conversation.",
+  "boardFolderHint": "Posts and attachments from this channel are saved here.",
+  "openBoardFolder": "Open board folder",
+  "errorAgentChannel": "This participant belongs to another channel."
 }

@@ -185,7 +185,7 @@
   "errorLocalFolder": "ドライブ文字で始まるローカルフォルダーの絶対パスを入力してください。",
   "errorFolderName": "フォルダーパスに使用できない名前があります。",
   "errorFolderCheck": "フォルダーのパスを確認できません。",
-  "errorSharedOrLogs": "shared または logs フォルダーを選んでください。",
+  "errorSharedOrLogs": "shared、logs、board のいずれかを選択してください。",
   "errorCopyAccess": "既存の shared フォルダーにアクセスできません。コピーをオフにすると場所を変更できます。",
   "errorCopyName": "新しい場所に同名の項目があります。{path}",
   "errorCopyContents": "新しい場所に内容が異なるファイルがあります。{path}",
@@ -194,7 +194,7 @@
   "channelActions": "{name} のチャンネルメニュー",
   "renameChannel": "チャンネル名を変更",
   "deleteChannel": "チャンネルを削除",
-  "deleteChannelConfirm": "このチャンネル、会話、添付ファイル、チャットログ、未処理のメッセージを削除します。共有フォルダー内のファイルは保持されます。この操作は取り消せません。",
+  "deleteChannelConfirm": "このチャンネルと参加者、掲示板の投稿、会話、添付ファイル、チャットログ、未処理メッセージを削除します。共有ファイルは保持されます。元に戻せません。",
   "resizeChannels": "チャンネルパネルの幅を変更",
   "resizeParticipants": "参加者パネルの幅を変更",
   "resizePanelHint": "ドラッグまたは矢印キーで幅を変更します。ダブルクリックで元の幅に戻します。",
@@ -265,5 +265,8 @@
   "agentDisconnected": "(接続切れ)",
   "agentDisconnectedHint": "現在このチャンネルでメッセージの受信を待機していません。",
   "noChannelSelected": "チャンネルが選択されていません",
-  "chooseChannelHint": "左側でチャンネルを選択するか、新しいチャンネルを作成して会話を始めてください。"
+  "chooseChannelHint": "左側でチャンネルを選択するか、新しいチャンネルを作成して会話を始めてください。",
+  "boardFolderHint": "このチャンネルの投稿と添付ファイルを保存します。",
+  "openBoardFolder": "board フォルダーを開く",
+  "errorAgentChannel": "別のチャンネルの参加者です。"
 }

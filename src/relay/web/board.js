@@ -14,14 +14,37 @@ let boardRenderKey = "";
 let boardPosting = false;
 let boardDraftId = null;
 
+function resetBoardChannel() {
+  boardRequest++;
+  boardOpen = false;
+  boardView.hidden = true;
+  boardSelected = null;
+  boardNext = null;
+  boardRenderKey = "";
+  boardPages.length = 0;
+  boardFiles.length = 0;
+  boardDraftId = null;
+  boardForm.reset();
+  boardDialog.close();
+  boardDeleteDialog.close();
+  boardList.replaceChildren();
+  boardPost.replaceChildren();
+  for (const id of ["board-back", "board-delete", "board-pages"]) el(id).hidden = true;
+  for (const id of ["board-status", "board-form-error", "board-upload-progress"]) showMessage(id, "");
+  showBoardFiles();
+  el("board-toggle").setAttribute("aria-pressed", "false");
+  el("board-toggle-label").textContent = t("board");
+}
+
 function showBoardHeading() {
   el("board-toggle-label").textContent = t("viewChat");
   el("chat-title").textContent = t("board");
-  el("room-state").textContent = t("boardSubtitle");
+  el("room-state").textContent = current?.channel ? channelName(current.channel) : t("boardSubtitle");
   document.title = appName + " — " + t("board");
 }
 
 function showBoard(open) {
+  if (open && !current?.channel) return;
   boardOpen = open;
   boardView.hidden = !open;
   showChannelView();
@@ -71,7 +94,7 @@ function renderBoardPost(post) {
     const gallery = element("div", "board-gallery");
     for (const file of post.images) {
       const figure = element("figure");
-      const address = "/api/board/attachment?id=" + file.id;
+      const address = "/api/board/attachment?" + new URLSearchParams({ id: file.id, channel: activeChannel });
       const preview = attachmentPreview(file, address);
       if (preview) figure.append(preview);
       const caption = element("figcaption", "");
@@ -100,15 +123,19 @@ function renderBoardPost(post) {
 }
 
 async function loadBoard() {
-  if (!boardOpen) return;
+  if (!boardOpen || !activeChannel) return;
   const sequence = ++boardRequest;
+  const channelId = activeChannel;
   const before = boardPages.at(-1);
+  const query = new URLSearchParams({ channel: channelId });
+  if (before) query.set("before", before);
+  if (boardSelected !== null) query.set("id", boardSelected);
   const route = boardSelected === null
-    ? "/api/board" + (before ? "?before=" + before : "")
-    : "/api/board/post?id=" + boardSelected;
+    ? "/api/board?" + query
+    : "/api/board/post?" + query;
   try {
     const result = await request(route);
-    if (sequence !== boardRequest || !boardOpen) return;
+    if (sequence !== boardRequest || !boardOpen || channelId !== activeChannel) return;
     const key = JSON.stringify([route, result]);
     if (key !== boardRenderKey) {
       if (boardSelected === null) {
@@ -166,13 +193,15 @@ el("board-delete-form").addEventListener("submit", async (event) => {
   if (button.disabled) return;
   button.disabled = true;
   const postId = Number(boardDeleteDialog.dataset.postId);
+  const channelId = activeChannel;
   showMessage("board-delete-error", "");
   try {
-    await request("/api/board/delete", { post_id: postId });
+    await request("/api/board/delete", { post_id: postId, channel_id: channelId });
+    if (channelId !== activeChannel) return;
     if (Number(boardDeleteDialog.dataset.postId) === postId) boardDeleteDialog.close();
     if (boardSelected === postId) showBoardPage(null);
   } catch (error) {
-    if (Number(boardDeleteDialog.dataset.postId) === postId) showMessage("board-delete-error", error.message);
+    if (channelId === activeChannel && Number(boardDeleteDialog.dataset.postId) === postId) showMessage("board-delete-error", error.message);
   } finally {
     button.disabled = false;
   }
@@ -252,6 +281,8 @@ boardDialog.addEventListener("paste", (event) => {
 boardForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (boardPosting) return;
+  if (!activeChannel) return;
+  const channelId = activeChannel;
   const title = el("board-title-input").value.trim();
   const body = el("board-body-input").value.trim();
   if (!title || (!body && !boardFiles.length)) {
@@ -265,8 +296,11 @@ boardForm.addEventListener("submit", async (event) => {
   const requestId = boardDraftId;
   let attachments = [];
   try {
-    attachments = await uploadFiles(boardFiles, (index, total) => showMessage("board-upload-progress", t("uploadProgress", { index, total })));
-    const post = await request("/api/board", { request_id: requestId, title, body, attachments });
+    attachments = await uploadFiles([...boardFiles], (index, total) => {
+      if (channelId === activeChannel) showMessage("board-upload-progress", t("uploadProgress", { index, total }));
+    });
+    const post = await request("/api/board", { request_id: requestId, title, body, attachments, channel_id: channelId });
+    if (channelId !== activeChannel) return;
     if (boardDraftId === requestId) {
       boardDialog.close();
       boardDraftId = null;
@@ -277,7 +311,7 @@ boardForm.addEventListener("submit", async (event) => {
     boardPages.length = 0;
     showBoardPage(post.id);
   } catch (error) {
-    showMessage("board-form-error", error.message);
+    if (channelId === activeChannel) showMessage("board-form-error", error.message);
   } finally {
     await discardUploads(attachments);
     showMessage("board-upload-progress", "");
