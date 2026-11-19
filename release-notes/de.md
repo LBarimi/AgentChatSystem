@@ -6,6 +6,7 @@ AgentChatSystem ist ein lokaler Arbeitsbereich für Codex- und Claude-Sitzungen 
 
 ## Neuerungen in 1.0.0
 
+- Verwaltete Aufgaben können bis zu zwei Stunden laufen. Fehlermeldungen unterscheiden Zeitüberschreitungen und erkannte CLI-Fehler.
 - PPT-Dateien können überall angehängt werden.
 - Chats unterstützen das Löschen einzelner Nachrichten und fünf Reaktionen. Karten zeigen die Kontolimit-Auslastung in Prozent und die Claude-Version. Während des Starts und der Arbeit dreht sich der Kanalindikator.
 - Der Name des Codex-Managers erscheint blau. Auf seiner Karte stehen die Schaltflächen für Codex und Claude nebeneinander. Unter Windows öffnet sich die Systemordnerauswahl. Die Claude-Liste zeigt Modellversionen.

@@ -1,12 +1,14 @@
 """ACS-owned conversations and their delivery workers."""
+from datetime import datetime, timezone
 import json
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
 import subprocess
+import sys
 from tempfile import TemporaryDirectory
 from threading import Thread
-from time import time
+from time import monotonic, time
 
 from relay.errors import ApiError
 from relay import managed_cli
@@ -24,6 +26,8 @@ PARENT_SCHEMA = {
     'additionalProperties': False,
 }
 MAX_HANDOFFS = 2
+TASK_TIMEOUT_SECONDS = 2 * 60 * 60
+STARTUP_TIMEOUT_SECONDS = 120
 
 
 @lru_cache(maxsize=7)
@@ -99,8 +103,8 @@ class ManagedAgents:
         with self.room.changed:
             if self.closed:
                 raise ApiError('ACS is stopping.', 503, key='errorUnavailable')
-            agent = self._startup_agent(agent_id, channel_id)
-            if agent['error'] != 'managedAuthRequired':
+            agent = self.get(agent_id) if isinstance(agent_id, str) else None
+            if not agent or agent['channel_id'] != channel_id or agent['error'] != 'managedAuthRequired':
                 raise ApiError('This agent has no login request.', 409, key='managedNotReady')
             role = agent['role']
             if role in self.logins:
@@ -136,7 +140,7 @@ class ManagedAgents:
                     with self.db:
                         self.db.execute("""
                             UPDATE managed_agents SET error=NULL
-                            WHERE error='managedAuthRequired' AND session IS NULL
+                            WHERE error='managedAuthRequired'
                                 AND id IN (SELECT id FROM participants WHERE role=? AND removed_at IS NULL)
                         """, (role,))
                 self.room._notify()
@@ -322,6 +326,7 @@ class ManagedAgents:
 
     def _turn(self, agent, message, message_id):
         agent_id = agent['id']
+        started = monotonic()
         turn = None
         scratch = None
         response = None
@@ -345,26 +350,33 @@ class ManagedAgents:
                     prompt += self._attachments(message, Path(scratch.name))
                 turn = managed_cli.Turn(managed_cli.command(program, agent, schema), agent['cwd'])
                 self.processes[agent_id] = turn
-            output = turn.read(prompt, timeout=900 if message else 120)
-            session, body, model, quota = managed_cli.result(agent['role'], output)
+            timeout = TASK_TIMEOUT_SECONDS if message else STARTUP_TIMEOUT_SECONDS
+            session, body, model, quota = turn.run(agent['role'], prompt, timeout)
             if agent['session'] and session != agent['session']:
-                raise managed_cli.CliError('CLI resumed a different session')
+                raise managed_cli.CliError('CLI resumed a different session', key='managedResponseInvalid')
             target = agent['parent_id'] if message and message['sender'] == agent['parent_id'] else None
             if schema:
-                reply = json.loads(body)
-                body = reply['message']
-                child = reply['child_id']
-                if not isinstance(body, str) or not body.strip() or (child is not None and (not isinstance(child, str) or child not in children)):
-                    raise managed_cli.CliError('Invalid delegation')
+                try:
+                    reply = json.loads(body)
+                    body, child = reply['message'], reply['child_id']
+                    if not isinstance(body, str) or not body.strip() or (
+                        child is not None and (not isinstance(child, str) or child not in children)
+                    ):
+                        raise ValueError
+                except (ValueError, TypeError, KeyError) as error:
+                    raise managed_cli.CliError('Invalid delegation', key='managedResponseInvalid') from error
                 target = child
             if agent['role'] == 'codex':
                 quota = codex_quota(program, PROJECT)
             model_label = claude_model_label(model) if model else ''
             response = (session, body.strip()[:10000].encode('utf-8', 'replace').decode(), model_label, quota, target)
         except managed_cli.CliError as error:
-            if message is None and managed_cli.authentication_required(agent['role'], error):
-                failure = 'managedAuthRequired'
-        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
+            failure = managed_cli.failure_key(agent['role'], error)
+        except subprocess.TimeoutExpired:
+            failure = 'managedTimedOut' if message else 'managedStartupTimedOut'
+        except PermissionError:
+            failure = 'managedPermissionDenied'
+        except (OSError, ValueError, TypeError, KeyError):
             pass
         finally:
             with self.room.changed:
@@ -373,6 +385,12 @@ class ManagedAgents:
                     self.processes.pop(agent_id, None)
                 if not self.closed and self.get(agent_id):
                     self._finish(agent, message_id, response, failure=None if response else failure)
+                    if not response and (
+                        message is None or self.db.execute('SELECT 1 FROM messages WHERE id=?', (message_id,)).fetchone()
+                    ):
+                        now = datetime.now(timezone.utc).isoformat(timespec='seconds')
+                        print(f'{now} CLI {agent_id} message={message_id} {failure} after {monotonic() - started:.1f}s',
+                              file=sys.stderr, flush=True)
             try:
                 if turn:
                     turn.reap()

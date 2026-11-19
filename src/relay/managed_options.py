@@ -131,7 +131,8 @@ def codex_quota(program, cwd):
         windows = [managed_cli.quota_window(period.get('usedPercent'), period.get('resetsAt'))
                    for period in (rates.get('primary'), rates.get('secondary')) if isinstance(period, dict)]
         return max((window for window in windows if window), key=lambda item: item['percent'], default=None)
-    except (OSError, KeyError, ValueError, TypeError, AttributeError, Empty, managed_cli.CliError):
+    except (OSError, KeyError, ValueError, TypeError, AttributeError, Empty,
+            subprocess.TimeoutExpired, managed_cli.CliError):
         return None
 
 

@@ -58,6 +58,8 @@ Python must be available as `python` on Windows or `python3` on Linux and macOS.
 
 ACS opens a CLI session when you create a card, then resumes that session for each message. Cards show the highest percentage used among the provider's reported account limit windows. The percentage updates after CLI replies and stays unknown when the provider does not report it. Claude cards show the model version reported by the catalog or the last turn.
 
+Managed tasks have up to two hours to finish. Agent startup has a two-minute limit. The chat and agent card distinguish timeouts, sign-in problems, permission denials, rejected models or reasoning levels, and provider limits when ACS can identify them. On Windows, `var/server-error.log` records the failure category and elapsed time.
+
 Removing a card stops its running CLI and removes the saved session link from ACS. Removing a parent also removes its children. Removing a channel stops all managed agents in that channel. The provider's local conversation history and the reference folder stay on disk.
 
 CLI agents use the provider’s normal authentication and tool permissions. Codex uses a workspace-write sandbox. Create, sign in, send CLI tasks, and remove managed agents from the server computer on localhost. LAN viewers can follow the shared conversation and token counts.

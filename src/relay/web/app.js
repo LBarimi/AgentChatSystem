@@ -1073,8 +1073,9 @@ function renderManagedSetup(agent) {
   const status = pending ? "managedAuthPending" : agent.auth_state === "failed" ? "managedAuthFailed"
     : agent.error || managedStates[agent.state] || "managedStarting";
   el("setup-managed-status").textContent = t(status);
-  el("setup-managed-recovery").hidden = !current?.managed_local || agent.resumable || !agent.error || pending;
+  el("setup-managed-recovery").hidden = !current?.managed_local || !agent.error || pending || (agent.resumable && !authentication);
   el("setup-managed-login").hidden = !authentication;
+  el("setup-managed-retry").hidden = agent.resumable;
 }
 
 async function openSetup(agentId, refreshOnly = false) {

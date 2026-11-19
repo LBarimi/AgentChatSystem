@@ -1,4 +1,5 @@
 """Run a single turn in a managed Codex or Claude Code conversation."""
+from collections import deque
 import json
 import os
 from pathlib import Path
@@ -11,11 +12,15 @@ from uuid import UUID
 from relay.errors import ApiError
 
 
+MAX_EVENT_BYTES = 8 * 1024 * 1024
+
+
 class CliError(Exception):
-    def __init__(self, message, *, output='', diagnostics=''):
+    def __init__(self, message, *, output='', diagnostics='', key=None):
         super().__init__(message)
         self.output = output
         self.diagnostics = diagnostics
+        self.key = key
 
 
 def executable(role):
@@ -43,15 +48,17 @@ def login_command(role):
     return [program, 'login'] if role == 'codex' else [program, 'auth', 'login']
 
 
-def authentication_required(role, error):
-    """Examine CLI error events and diagnostics, never a successful model reply."""
+def failure_key(role, error):
+    """Classify diagnostics and provider error events without using model replies."""
+    if error.key:
+        return error.key
     errors = [error.diagnostics]
     for line in error.output.splitlines():
         try:
             event = json.loads(line)
         except ValueError:
             # Some CLI versions report a plain-text error when no session starts.
-            if re.match(r'^\s*(?:error:\s*)?(?:not logged in|please run /login)\b', line, re.I):
+            if re.match(r'^\s*(?:error:|not logged in\b|please run /login\b)', line, re.I):
                 errors.append(line)
             continue
         if not isinstance(event, dict):
@@ -63,10 +70,24 @@ def authentication_required(role, error):
             errors.append(event.get('result', ''))
             if isinstance(event.get('errors'), list):
                 errors.extend(event['errors'])
-    pattern = (r'^\s*(?:error:\s*)?not logged in\b|\bplease run /login\b|'
-               r'\b(?:run|use) `?codex login\b|\b401\s+(?:unauthorized|authentication_error)\b|'
-               r'\b(?:authentication_error|invalid_api_key|token_expired|token_revoked)\b')
-    return any(re.search(pattern, detail, re.I | re.M) for detail in errors if isinstance(detail, str))
+            if event.get('permission_denials'):
+                errors.append('permission_denied')
+    detail = '\n'.join(text for text in errors if isinstance(text, str))
+    for key, pattern in (
+        ('managedAuthRequired', r'^\s*(?:error:\s*)?not logged in\b|\bplease run /login\b|'
+         r'\b(?:run|use) `?codex login\b|\b401\s+(?:unauthorized|authentication_error)\b|'
+         r'\b(?:authentication_error|invalid_api_key|token_expired|token_revoked)\b'),
+        ('managedRateLimited', r'\brate.limit(?:ed|_error| exceeded)?\b|\b429\s+too many requests\b|'
+         r'\busage limit\b|\binsufficient_quota\b'),
+        ('managedEffortRejected', r'\b(?:invalid|unknown|unsupported)\b[^\r\n]*\b(?:effort|reasoning level)\b|'
+         r'\b(?:effort|reasoning level)\b[^\r\n]*\b(?:unsupported|not supported|not a valid value)\b'),
+        ('managedModelRejected', r'\b(?:unknown|invalid|unsupported) model\b|\bmodel_not_found\b|'
+         r'\bmodel\b[^\r\n]*\b(?:not found|not supported|not available|does not exist|may not exist)\b'),
+        ('managedPermissionDenied', r'\bpermission.denied\b|\b(?:permission_error|access is denied|EACCES|EPERM)\b'),
+    ):
+        if re.search(pattern, detail, re.I | re.M):
+            return key
+    return 'managedRunFailed'
 
 
 def command(program, agent, schema=None):
@@ -97,48 +118,61 @@ def command(program, agent, schema=None):
     return args
 
 
-def result(role, output):
-    try:
-        model = ''
-        quota = None
+def result(role, output, *, failed=False, diagnostics=''):
+    session = body = quota = last = None
+    model = ''
+    completed = False
+    errors = deque(maxlen=16)
+    for line in output.splitlines() if isinstance(output, str) else output:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            if line.strip():
+                errors.append(line[:4096])
+            continue
+        if not isinstance(event, dict):
+            continue
+        kind = event.get('type')
         if role == 'codex':
-            session = body = None
-            completed = False
-            for line in output.splitlines():
-                if not line.strip():
-                    continue
-                event = json.loads(line)
-                if event['type'] == 'thread.started':
-                    session = event['thread_id']
-                elif event['type'] == 'item.completed' and event['item']['type'] == 'agent_message':
-                    body = event['item']['text']
-                elif event['type'] == 'turn.completed':
-                    completed = True
-            if not completed:
-                raise ValueError
-        else:
-            last = None
-            for line in output.splitlines():
-                if not line.strip():
-                    continue
-                event = json.loads(line)
-                kind = event.get('type')
-                if kind == 'system' and event.get('subtype') == 'init':
-                    model = event.get('model') or model
-                elif kind == 'assistant':
-                    model = event.get('message', {}).get('model') or model
-                elif kind == 'rate_limit_event':
-                    quota = claude_quota(event.get('rate_limit_info')) or quota
-                elif kind == 'result':
-                    last = event
-            if not last or last.get('is_error'):
-                raise ValueError
-            session, body = last['session_id'], last['result']
+            if kind == 'thread.started':
+                session = event.get('thread_id')
+            elif kind == 'item.completed' and isinstance(event.get('item'), dict):
+                if event['item'].get('type') == 'agent_message':
+                    body = event['item'].get('text')
+            elif kind == 'turn.completed':
+                completed = True
+            elif kind in ('error', 'turn.failed'):
+                if len(line) <= 65_536:
+                    errors.append(line)
+                if kind == 'turn.failed':
+                    completed = False
+        elif kind == 'system' and event.get('subtype') == 'init':
+            model = event.get('model') or model
+        elif kind == 'assistant' and event.get('parent_tool_use_id') is None:
+            message = event.get('message')
+            if isinstance(message, dict):
+                model = message.get('model') or model
+        elif kind == 'rate_limit_event':
+            quota = claude_quota(event.get('rate_limit_info')) or quota
+        elif kind == 'result':
+            last = event
+            if event.get('is_error') and len(line) <= 65_536:
+                errors.append(line)
+    if last:
+        completed = not last.get('is_error')
+        session, body = last.get('session_id'), last.get('result')
+    if failed or not completed:
+        failure = CliError('Unsuccessful or invalid CLI response', output='\n'.join(errors), diagnostics=diagnostics)
+        failure.key = failure_key(role, failure)
+        if failure.key == 'managedRunFailed' and not failed and not errors:
+            failure.key = 'managedResponseInvalid'
+        raise failure
+    try:
         if not isinstance(body, str) or not body.strip():
             raise ValueError
         return str(UUID(session)), body.strip(), model if isinstance(model, str) else '', quota
     except (ValueError, TypeError, KeyError, AttributeError) as error:
-        raise CliError('Unsuccessful or invalid CLI response', output=output) from error
+        raise CliError('Invalid final CLI response', key='managedResponseInvalid') from error
 
 
 def quota_window(percent, resets_at):
@@ -211,15 +245,32 @@ class Turn:
     def read(self, prompt, timeout):
         self.process.communicate(prompt, timeout=timeout)
         self.output.seek(0)
-        output = self.output.read(8 * 1024 * 1024 + 1)
-        if len(output) > 8 * 1024 * 1024:
+        output = self.output.read(MAX_EVENT_BYTES + 1)
+        if len(output) > MAX_EVENT_BYTES:
             raise CliError('CLI output exceeds the response limit')
         output = output.decode('utf-8', errors='replace')
         if self.process.returncode:
-            self.error_output.seek(max(0, self.error_output.seek(0, os.SEEK_END) - 65536))
-            diagnostics = self.error_output.read(65536).decode('utf-8', errors='replace')
-            raise CliError('CLI exited unsuccessfully', output=output, diagnostics=diagnostics)
+            raise CliError('CLI exited unsuccessfully', output=output, diagnostics=self._diagnostics())
         return output
+
+    def run(self, role, prompt, timeout):
+        self.process.communicate(prompt, timeout=timeout)
+        self.output.seek(0)
+        diagnostics = self._diagnostics()
+        return result(role, self._output_lines(), failed=bool(self.process.returncode), diagnostics=diagnostics)
+
+    def _diagnostics(self):
+        end = self.error_output.seek(0, os.SEEK_END)
+        self.error_output.seek(max(0, end - 65_536))
+        return self.error_output.read(65_536).decode('utf-8', errors='replace')
+
+    def _output_lines(self):
+        while line := self.output.readline(MAX_EVENT_BYTES + 1):
+            if len(line) <= MAX_EVENT_BYTES:
+                yield line.decode('utf-8', errors='replace')
+            else:
+                while line and not line.endswith(b'\n'):
+                    line = self.output.readline(MAX_EVENT_BYTES + 1)
 
     def reap(self):
         try:

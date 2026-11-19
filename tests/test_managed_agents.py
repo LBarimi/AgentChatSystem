@@ -51,6 +51,9 @@ class FakeTurn:
             {'type': 'turn.completed', 'usage': {'input_tokens': 10, 'output_tokens': 4}},
         ))
 
+    def run(self, role, prompt, timeout):
+        return managed_cli.result(role, self.read(prompt, timeout))
+
     def stop(self):
         self.stopped.set()
 
@@ -191,11 +194,53 @@ class ManagedAgentsTest(unittest.TestCase):
             self.until(lambda: self.room.managed.get(parent)['error'])
             card = self.room.participants(self.channel, local=True)[0]
             self.assertEqual(card['state'], 'failed')
+            self.assertEqual(card['error'], 'managedModelRejected')
             self.assertNotIn('auth_state', card)
             with self.assertRaises(ApiError):
                 self.room.managed.login(parent, self.channel)
         self.room.managed.retry(parent, self.channel)
         self.ready(parent)
+
+    def test_task_has_two_hour_limit_and_reports_timeout_to_chat(self):
+        durations = []
+
+        class SlowTurn(FakeTurn):
+            def read(self, prompt, timeout):
+                durations.append(timeout)
+                if 'task exceeds limit' in prompt:
+                    raise subprocess.TimeoutExpired(self.args, timeout)
+                return super().read(prompt, timeout)
+
+        with patch.object(managed_cli, 'Turn', SlowTurn):
+            parent = self.create('codex', 'Coordinator')
+            self.ready(parent)
+            child = self.create('claude', 'Reviewer', parent)
+            self.ready(child)
+            message = self.task('task exceeds limit', child)
+            self.until(lambda: self.room.managed.get(child)['error'] == 'managedTimedOut')
+            reply = self.room.snapshot(self.channel)['messages'][-1]
+            self.assertEqual(reply['reply_to'], message['id'])
+            self.assertIn('two hours', reply['body'])
+            self.assertEqual(durations, [120, 120, 7200])
+
+    def test_expired_login_can_recover_without_resetting_session(self):
+        class ExpiredTurn(FakeTurn):
+            def read(self, prompt, timeout):
+                if self.args == ['codex', 'login']:
+                    return ''
+                if 'expired login' in prompt:
+                    raise managed_cli.CliError('CLI failed', diagnostics='401 Unauthorized')
+                return super().read(prompt, timeout)
+
+        with patch.object(managed_cli, 'Turn', ExpiredTurn):
+            agent = self.create('codex', 'Coordinator')
+            self.ready(agent)
+            session = self.room.managed.get(agent)['session']
+            self.task('expired login')
+            self.until(lambda: self.room.managed.get(agent)['error'] == 'managedAuthRequired')
+            self.room.managed.login(agent, self.channel)
+            self.until(lambda: self.room.managed.get(agent)['error'] is None)
+            self.assertEqual(self.room.managed.get(agent)['session'], session)
 
 
 class ManagedProcessTest(unittest.TestCase):
@@ -203,11 +248,43 @@ class ManagedProcessTest(unittest.TestCase):
         error_result = {'type': 'result', 'is_error': True, 'result': 'Not logged in · Please run /login'}
         with self.assertRaises(managed_cli.CliError) as rejected:
             managed_cli.result('claude', json.dumps(error_result))
-        self.assertTrue(managed_cli.authentication_required('claude', rejected.exception))
+        self.assertEqual(managed_cli.failure_key('claude', rejected.exception), 'managedAuthRequired')
         failed = managed_cli.CliError('CLI exited', output=json.dumps({
             'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'Please run /login'},
         }), diagnostics='Error: network timeout')
-        self.assertFalse(managed_cli.authentication_required('codex', failed))
+        self.assertEqual(managed_cli.failure_key('codex', failed), 'managedRunFailed')
+
+    def test_classifies_specific_cli_errors(self):
+        for detail, expected in (
+            ('Error: invalid value high for --effort', 'managedEffortRejected'),
+            ('API Error: model_not_found', 'managedModelRejected'),
+            ('Error: Permission denied', 'managedPermissionDenied'),
+            ('API Error: 429 Too Many Requests', 'managedRateLimited'),
+        ):
+            with self.subTest(detail=detail):
+                output = json.dumps({'type': 'result', 'is_error': True, 'result': detail})
+                with self.assertRaises(managed_cli.CliError) as raised:
+                    managed_cli.result('claude', output, failed=True)
+                self.assertEqual(raised.exception.key, expected)
+
+    def test_large_intermediate_output_does_not_hide_final_result(self):
+        session = str(uuid4())
+        script = (
+            'import json, sys\n'
+            'sys.stdin.read()\n'
+            'print(json.dumps({"type":"system","subtype":"init","model":"claude-opus-5-5"}))\n'
+            'for _ in range(12):\n'
+            '    print(json.dumps({"type":"user","message":"x"*1000000}))\n'
+            'print(json.dumps({"type":"user","message":"y"*9000000}))\n'
+            'print(json.dumps({"type":"result","session_id":sys.argv[1],"result":"Completed"}))\n'
+        )
+        with TemporaryDirectory() as directory:
+            turn = managed_cli.Turn([sys.executable, '-c', script, session], directory)
+            try:
+                self.assertEqual(turn.run('claude', 'task', timeout=10), (session, 'Completed', 'claude-opus-5-5', None))
+            finally:
+                turn.stop()
+                turn.reap()
 
     def test_cancellation_terminates_the_process_and_its_child(self):
         child = (
