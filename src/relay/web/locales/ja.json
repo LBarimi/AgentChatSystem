@@ -1,4 +1,9 @@
 {
+  "managedStopTask": "作業を停止",
+  "managedStopping": "停止中…",
+  "managedTaskStopped": "ユーザーがこの CLI 作業を停止しました。",
+  "managedTaskChanged": "選択した CLI 作業はすでに終了したか、別の作業に変わりました。",
+  "managedNoProgress": "CLI から 30 分間新しい出力がなかったため、作業を停止しました。",
   "chatMessageActions": "メッセージの操作",
   "chatAddReaction": "リアクションを追加",
   "chatReactionCheck": "チェック",

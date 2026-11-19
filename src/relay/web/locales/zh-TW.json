@@ -1,4 +1,9 @@
 {
+  "managedStopTask": "停止工作",
+  "managedStopping": "正在停止…",
+  "managedTaskStopped": "使用者停止了這項 CLI 工作。",
+  "managedTaskChanged": "這項 CLI 工作已結束或已變更。",
+  "managedNoProgress": "CLI 連續 30 分鐘沒有新輸出，工作已停止。",
   "chatMessageActions": "訊息操作",
   "chatAddReaction": "新增表情回應",
   "chatReactionCheck": "打勾",

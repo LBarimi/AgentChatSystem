@@ -1,4 +1,9 @@
 {
+  "managedStopTask": "작업 중지",
+  "managedStopping": "중지 중…",
+  "managedTaskStopped": "사용자가 이 CLI 작업을 중지했습니다.",
+  "managedTaskChanged": "선택한 CLI 작업이 이미 끝났거나 변경되었습니다.",
+  "managedNoProgress": "CLI가 30분 동안 새 출력을 내지 않아 작업을 중지했습니다.",
   "chatMessageActions": "메시지 메뉴",
   "chatAddReaction": "이모티콘 추가",
   "chatReactionCheck": "체크",

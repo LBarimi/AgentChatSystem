@@ -7,6 +7,7 @@ import re
 import signal
 import subprocess
 from tempfile import TemporaryFile
+from time import monotonic
 from uuid import UUID
 
 from relay.errors import ApiError
@@ -98,7 +99,11 @@ def command(program, agent, schema=None, *, attachments=None):
         if session:
             args.append('resume')
         args += ['--json', '--skip-git-repo-check', '-c', 'approval_policy="never"',
-                 '-c', 'sandbox_mode="workspace-write"']
+                 '-c', 'sandbox_mode="workspace-write"', '-c', 'sandbox_workspace_write.writable_roots=[]',
+                 '-c', 'sandbox_workspace_write.network_access=false', '-c', 'allow_login_shell=false',
+                 '-c', 'features.default_mode_request_user_input=false',
+                 '-c', 'tools.experimental_request_user_input.enabled=false',
+                 '-c', 'features.request_permissions_tool=false', '-c', 'features.tool_call_mcp_elicitation=false']
         if agent['effort']:
             args += ['-c', 'model_reasoning_effort=' + json.dumps(agent['effort'])]
         if model:
@@ -271,11 +276,37 @@ class Turn:
             raise CliError('CLI exited unsuccessfully', output=output, diagnostics=self._diagnostics())
         return output
 
-    def run(self, role, prompt, timeout):
-        self.process.communicate(prompt, timeout=timeout)
+    def run(self, role, prompt, timeout, *, idle_timeout=None):
+        if idle_timeout is None:
+            self.process.communicate(prompt, timeout=timeout)
+        else:
+            self._wait_for_output(prompt, timeout, idle_timeout)
         self.output.seek(0)
         diagnostics = self._diagnostics()
         return result(role, self._output_lines(), failed=bool(self.process.returncode), diagnostics=diagnostics)
+
+    def _wait_for_output(self, prompt, timeout, idle_timeout):
+        started = monotonic()
+        deadline, idle_deadline = started + timeout, started + idle_timeout
+        sizes = (0, 0)
+        while True:
+            wait = max(0, min(2, deadline - monotonic(), idle_deadline - monotonic()))
+            try:
+                self.process.communicate(prompt, timeout=wait)
+                return
+            except subprocess.TimeoutExpired:
+                # Popen retains unsent input internally after a timeout.
+                prompt = None
+                now = monotonic()
+                if now >= deadline:
+                    raise subprocess.TimeoutExpired(self.process.args, timeout) from None
+                # Query file sizes without seeking the child process's file handles.
+                updated = (os.fstat(self.output.fileno()).st_size, os.fstat(self.error_output.fileno()).st_size)
+                if updated != sizes:
+                    sizes = updated
+                    idle_deadline = now + idle_timeout
+                elif now >= idle_deadline:
+                    raise CliError('CLI produced no new output', key='managedNoProgress') from None
 
     def _diagnostics(self):
         end = self.error_output.seek(0, os.SEEK_END)

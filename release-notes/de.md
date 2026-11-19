@@ -6,6 +6,7 @@ AgentChatSystem ist ein lokaler Arbeitsbereich für Codex- und Claude-Sitzungen 
 
 ## Neuerungen in 1.0.0
 
+- Verwaltete CLI-Aufgaben werden nach 30 Minuten ohne Ausgabe gestoppt. Laufende Aufgaben lassen sich auf der Karte beenden, und wartende Aufgaben haben eine eigene Kanalanzeige.
 - Verwaltete Claude-Agenten bearbeiten Dateien in ihrem Referenzordner ohne Rückfrage. Für Shell-Befehle gelten die plattformspezifischen Berechtigungen von Claude Code.
 - Verwaltete Aufgaben können bis zu zwei Stunden laufen. Fehlermeldungen unterscheiden Zeitüberschreitungen und erkannte CLI-Fehler.
 - PPT-Dateien können überall angehängt werden.

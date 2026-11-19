@@ -754,7 +754,8 @@ class Room:
                 INSERT INTO deliveries(message_id,agent_id)
                 SELECT ?,p.id FROM participants p LEFT JOIN managed_agents a ON a.id=p.id
                 WHERE p.removed_at IS NULL AND p.channel_id=? AND
-                      (a.id IS NULL OR (? AND a.parent_id IS NULL AND a.session IS NOT NULL))
+                      (a.id IS NULL OR (? AND a.parent_id IS NULL AND a.session IS NOT NULL
+                                       AND COALESCE(a.error, '') != 'managedAuthRequired'))
             """, (message_id, channel_id, deliver_managed))
         elif recipient is not None:
             self.db.execute('INSERT INTO deliveries(message_id,agent_id) VALUES (?,?)', (message_id, recipient))
@@ -830,14 +831,23 @@ class Room:
                     if not self.db.execute("""
                         SELECT 1 FROM participants p LEFT JOIN managed_agents a ON a.id=p.id
                         WHERE p.removed_at IS NULL AND p.channel_id=? AND
-                              (a.id IS NULL OR (? AND a.parent_id IS NULL AND a.session IS NOT NULL)) LIMIT 1
+                              (a.id IS NULL OR (? AND a.parent_id IS NULL AND a.session IS NOT NULL
+                                               AND COALESCE(a.error, '') != 'managedAuthRequired')) LIMIT 1
                     """, (channel_id, is_local)).fetchone():
+                        if is_local and self.db.execute("""
+                            SELECT 1 FROM managed_agents a JOIN participants p ON p.id=a.id
+                            WHERE p.channel_id=? AND p.removed_at IS NULL AND a.parent_id IS NULL
+                                  AND a.error='managedAuthRequired' LIMIT 1
+                        """, (channel_id,)).fetchone():
+                            raise RequestError('Sign in to this CLI before sending a task.', 409, key='managedAuthRequired')
                         raise RequestError('메시지를 받을 에이전트를 먼저 추가하세요.', 409, key='errorAddAgentFirst')
                 elif self._participant(recipient) is None or self._participant(recipient)['channel_id'] != channel_id:
                     raise RequestError('보낼 대상을 선택하세요.', key='errorChooseRecipient')
                 elif managed := self.managed.get(recipient):
                     if not is_local:
                         raise RequestError('Send CLI tasks from the server computer.', 403, key='managedLocalOnly')
+                    if managed['error'] == 'managedAuthRequired':
+                        raise RequestError('Sign in to this CLI before sending a task.', 409, key='managedAuthRequired')
                     if not managed['session']:
                         raise RequestError('Wait until the CLI agent is ready.', 409, key='managedNotReady')
                 files = prepare_chat_files(attachments, self.uploads)
@@ -1295,6 +1305,9 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == '/api/managed/retry':
                 self._check_managed_local()
                 self._json(self.room.managed.retry(payload.get('id'), payload.get('channel_id')), 202)
+            elif self.path == '/api/managed/stop':
+                self._check_managed_local()
+                self._json(self.room.managed.stop_task(payload.get('id'), payload.get('channel_id'), payload.get('message_id')), 202)
             elif self.path == '/api/participants/rename':
                 self._json(self.room.rename(payload))
             elif self.path == '/api/participants/icon':

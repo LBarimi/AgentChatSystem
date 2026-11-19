@@ -184,8 +184,10 @@ function showChannels() {
     if (channel.id === activeChannel) button.setAttribute("aria-current", "page");
     button.append(icon("hash"), element("span", "channel-name", channelName(channel)));
     if (channel.pending > 0 || channel.working) {
-      const activity = element("span", "channel-activity");
-      const status = channel.pending > 0 ? t("channelWorking", { count: channel.pending }) : t("channelAgentWorking");
+      const activity = element("span", channel.working ? "channel-activity" : "channel-activity queued");
+      const status = channel.working
+        ? (channel.pending > 0 ? t("channelWorking", { count: channel.pending }) : t("channelAgentWorking"))
+        : t("pendingCount", { count: channel.pending });
       activity.title = status;
       activity.setAttribute("aria-hidden", "true");
       button.setAttribute("aria-label", channelName(channel) + " · " + status);
@@ -1076,6 +1078,10 @@ function renderManagedSetup(agent) {
   el("setup-managed-recovery").hidden = !current?.managed_local || !agent.error || pending || (agent.resumable && !authentication);
   el("setup-managed-login").hidden = !authentication;
   el("setup-managed-retry").hidden = agent.resumable;
+  const stop = el("setup-managed-stop");
+  stop.hidden = !current?.managed_local || !agent.active_message;
+  stop.disabled = Boolean(agent.stopping);
+  stop.textContent = t(agent.stopping ? "managedStopping" : "managedStopTask");
 }
 
 async function openSetup(agentId, refreshOnly = false) {
@@ -1129,6 +1135,24 @@ for (const [name, route] of [["retry", "/api/managed/retry"], ["login", "/api/ma
     }
   });
 }
+
+el("setup-managed-stop").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  const channelId = activeChannel;
+  const agent = current?.participants.find(({ id }) => id === setupAgent);
+  if (!agent?.active_message || button.disabled) return;
+  button.disabled = true;
+  showMessage("setup-managed-error", "");
+  try {
+    await request("/api/managed/stop", { id: agent.id, channel_id: channelId, message_id: agent.active_message });
+    if (activeChannel === channelId) loadRoom();
+  } catch (error) {
+    if (setupDialog.open && setupAgent === agent.id && activeChannel === channelId) {
+      button.disabled = false;
+      showMessage("setup-managed-error", error.message);
+    }
+  }
+});
 
 el("roster").addEventListener("click", async (event) => {
   const action = event.target.closest("[data-parent]");

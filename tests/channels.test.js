@@ -69,25 +69,29 @@ test('saved empty selections survive reload; only a fresh browser selects Genera
   }
 });
 
-test('channel activity appears beside busy channel names and clears when replies finish', () => {
+test('running and queued channels have different activity indicators', () => {
   function element(tag, className = '', textContent = '') {
     return { tag, className, textContent, children: [], attributes: {}, dataset: {}, classList: { toggle() {} },
       append(...items) { this.children.push(...items); }, replaceChildren(...items) { this.children = items; },
       setAttribute(name, value) { this.attributes[name] = value; } };
   }
   const list = element('nav');
-  const state = { current: { channels: [{ id: 'A', name: 'Working', pending: 2 }, { id: 'B', name: 'Idle', pending: 0 }] },
+  const state = { current: { channels: [{ id: 'A', name: 'Working', pending: 2, working: true },
+    { id: 'B', name: 'Idle', pending: 0 }, { id: 'C', name: 'Queued', pending: 3, working: false }] },
     activeChannel: 'B', closeChannelMenu() {}, element, icon: name => element('svg', name),
     channelName: channel => channel.name, el: () => list, t: (key, values) => key + ':' + (values.count ?? values.name) };
   vm.createContext(state);
   vm.runInContext(app.slice(app.indexOf('function showChannels()'), app.indexOf('\nfunction channelName(')), state);
   state.showChannels();
-  const [busy, idle] = list.children.map(row => row.children[0]);
+  const [busy, idle, queued] = list.children.map(row => row.children[0]);
   assert.equal(busy.children[2].className, 'channel-activity');
   assert.equal(busy.children[2].title, 'channelWorking:2');
   assert.equal(busy.attributes['aria-label'], 'Working · channelWorking:2');
   assert.equal(idle.children.length, 2);
+  assert.equal(queued.children[2].className, 'channel-activity queued');
+  assert.equal(queued.children[2].title, 'pendingCount:3');
   state.current.channels[0].pending = 0;
+  state.current.channels[0].working = false;
   state.showChannels();
   assert.equal(list.children[0].children[0].children.length, 2);
 });

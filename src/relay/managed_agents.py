@@ -27,6 +27,7 @@ PARENT_SCHEMA = {
 }
 MAX_HANDOFFS = 2
 TASK_TIMEOUT_SECONDS = 2 * 60 * 60
+TASK_IDLE_SECONDS = 30 * 60
 STARTUP_TIMEOUT_SECONDS = 120
 
 
@@ -46,6 +47,7 @@ class ManagedAgents:
         self.logins = {}
         self.login_states = {}
         self.threads = {}
+        self.stopping = set()
         self.closed = False
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS managed_agents (
@@ -215,9 +217,23 @@ class ManagedAgents:
         }
         if local:
             result['cwd'] = row['cwd']
+            result['active_message'] = row['active_message']
+            result['stopping'] = (row['id'], row['active_message']) in self.stopping
             if status == 'auth':
                 result['auth_state'] = self.login_states.get(row['role'], 'idle')
         return result
+
+    def stop_task(self, agent_id, channel_id, message_id):
+        with self.room.changed:
+            agent = self.get(agent_id) if isinstance(agent_id, str) else None
+            if (not agent or agent['channel_id'] != channel_id or
+                type(message_id) is not int or agent['active_message'] != message_id):
+                raise ApiError('The selected CLI task is no longer running.', 409, key='managedTaskChanged')
+            self.stopping.add((agent_id, message_id))
+            if turn := self.processes.get(agent_id):
+                turn.stop()
+            self.room._notify()
+            return {'state': 'stopping'}
 
     def delete(self, ids):
         for agent_id in ids:
@@ -261,7 +277,7 @@ class ManagedAgents:
                     agent = self.get(agent_id)
                     if self.closed or not agent:
                         return
-                    if not agent['session'] and agent['error']:
+                    if agent['error'] and (not agent['session'] or agent['error'] == 'managedAuthRequired'):
                         self.room.changed.wait()
                         continue
                     message = None
@@ -286,7 +302,12 @@ class ManagedAgents:
         if not message:
             return 'Initialize this AgentChatSystem conversation. Do not use tools. Reply only: Ready.', set()
         children = set()
-        instructions = 'Respond to this AgentChatSystem message in the sender’s language.'
+        instructions = (
+            'Respond to this AgentChatSystem message in the sender’s language. This run is non-interactive. '
+            'Use the tools allowed in the reference folder. If approval or input is required, complete any '
+            'remaining work you can do and report the blocker in your final reply. Do not wait for an answer '
+            'or repeat a denied action. Do not retry a task a user has stopped.'
+        )
         if agent['parent_id'] is None:
             cursor = message
             depth = 0
@@ -297,6 +318,7 @@ class ManagedAgents:
                 rows = self.db.execute("""
                     SELECT a.id,p.name,p.role FROM managed_agents a JOIN participants p ON a.id=p.id
                     WHERE a.parent_id=? AND a.session IS NOT NULL AND p.removed_at IS NULL
+                        AND COALESCE(a.error, '') != 'managedAuthRequired'
                 """, (agent['id'],))
                 roster = [dict(row) for row in rows]
                 children = {child['id'] for child in roster}
@@ -333,7 +355,7 @@ class ManagedAgents:
         failure = 'managedRunFailed'
         try:
             with self.room.changed:
-                if self.closed or not self.get(agent_id):
+                if self.closed or not self.get(agent_id) or (agent_id, message_id) in self.stopping:
                     return
                 if message and not self.db.execute('SELECT 1 FROM messages WHERE id=?', (message_id,)).fetchone():
                     return
@@ -355,7 +377,9 @@ class ManagedAgents:
                 turn = managed_cli.Turn(managed_cli.command(program, agent, schema, attachments=attachments), agent['cwd'])
                 self.processes[agent_id] = turn
             timeout = TASK_TIMEOUT_SECONDS if message else STARTUP_TIMEOUT_SECONDS
-            session, body, model, quota = turn.run(agent['role'], prompt, timeout)
+            session, body, model, quota = turn.run(
+                agent['role'], prompt, timeout, idle_timeout=TASK_IDLE_SECONDS if message else None,
+            )
             if agent['session'] and session != agent['session']:
                 raise managed_cli.CliError('CLI resumed a different session', key='managedResponseInvalid')
             target = agent['parent_id'] if message and message['sender'] == agent['parent_id'] else None
@@ -384,12 +408,15 @@ class ManagedAgents:
             pass
         finally:
             with self.room.changed:
+                if (agent_id, message_id) in self.stopping:
+                    self.stopping.discard((agent_id, message_id))
+                    response, failure = None, 'managedTaskStopped'
                 if turn:
                     turn.stop()
                     self.processes.pop(agent_id, None)
                 if not self.closed and self.get(agent_id):
                     self._finish(agent, message_id, response, failure=None if response else failure)
-                    if not response and (
+                    if not response and failure != 'managedTaskStopped' and (
                         message is None or self.db.execute('SELECT 1 FROM messages WHERE id=?', (message_id,)).fetchone()
                     ):
                         now = datetime.now(timezone.utc).isoformat(timespec='seconds')
@@ -426,7 +453,7 @@ class ManagedAgents:
             elif original:
                 published = self.room._insert(channel_id, aid, target, body, message_id)
             self.db.execute('UPDATE managed_agents SET active_message=NULL,error=? WHERE id=?',
-                            (failure if message_id is None or original else None, aid))
+                            (failure if (message_id is None or original) and failure != 'managedTaskStopped' else None, aid))
         if published:
             self.room._write_log(channel_id, published)
         self.room._notify()

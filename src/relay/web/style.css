@@ -191,6 +191,7 @@ body.resizing-panels, body.resizing-panels * { cursor: col-resize !important; us
 .channel-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .channel-name { flex: 0 1 auto; }
 .channel-activity { flex: 0 0 13px; width: 13px; height: 13px; border: 2px solid var(--accent-border); border-top-color: var(--primary); border-radius: 50%; animation: channel-spin .9s linear infinite; }
+.channel-activity.queued { animation: none; border-color: var(--muted); }
 @keyframes channel-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .channel-activity { animation: none; } }
 .channel-item:hover { background: var(--surface); }

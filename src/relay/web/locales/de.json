@@ -1,4 +1,9 @@
 {
+  "managedStopTask": "Aufgabe stoppen",
+  "managedStopping": "Wird gestoppt…",
+  "managedTaskStopped": "Der Benutzer hat diese CLI-Aufgabe gestoppt.",
+  "managedTaskChanged": "Die ausgewählte CLI-Aufgabe ist beendet oder hat sich geändert.",
+  "managedNoProgress": "Die CLI hat 30 Minuten lang keine Ausgabe erzeugt. Die Aufgabe wurde gestoppt.",
   "chatMessageActions": "Nachrichtenaktionen",
   "chatAddReaction": "Reaktion hinzufügen",
   "chatReactionCheck": "Haken",

@@ -1,4 +1,9 @@
 {
+  "managedStopTask": "Stop task",
+  "managedStopping": "Stopping…",
+  "managedTaskStopped": "The user stopped this CLI task.",
+  "managedTaskChanged": "This CLI task has already finished or changed.",
+  "managedNoProgress": "The CLI produced no output for 30 minutes. The task was stopped.",
   "chatMessageActions": "Message actions",
   "chatAddReaction": "Add reaction",
   "chatReactionCheck": "Check",

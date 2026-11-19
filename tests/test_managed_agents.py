@@ -51,7 +51,7 @@ class FakeTurn:
             {'type': 'turn.completed', 'usage': {'input_tokens': 10, 'output_tokens': 4}},
         ))
 
-    def run(self, role, prompt, timeout):
+    def run(self, role, prompt, timeout, *, idle_timeout=None):
         return managed_cli.result(role, self.read(prompt, timeout))
 
     def stop(self):
@@ -132,6 +132,32 @@ class ManagedAgentsTest(unittest.TestCase):
         self.assertEqual(snapshot['total_messages'], 3)
         self.assertEqual({item['id']: item['is_manager'] for item in snapshot['archived_participants']},
                          {parent: 1, child: 0})
+
+    def test_stop_only_cancels_the_selected_task_and_preserves_the_session(self):
+        parent = self.create('codex', 'Coordinator')
+        self.ready(parent)
+        child = self.create('claude', 'Reviewer', parent)
+        self.ready(child)
+        with self.room.changed:
+            session = self.room.managed.get(child)['session']
+        message = self.task('hold the turn', child)
+        self.until(lambda: child in self.room.managed.processes and self.room.managed.processes[child].holding.is_set())
+        with self.assertRaises(ApiError):
+            self.room.managed.stop_task(child, 'general', message['id'])
+        with self.assertRaises(ApiError):
+            self.room.managed.stop_task(child, self.channel, message['id'] + 1)
+        self.assertEqual(self.room.managed.stop_task(child, self.channel, message['id']), {'state': 'stopping'})
+        self.until(lambda: self.room.managed.get(child)['active_message'] is None)
+        with self.room.changed:
+            stopped = self.room.snapshot(self.channel)['messages'][-1]
+            self.assertEqual(stopped['reply_to'], message['id'])
+            self.assertIn('stopped', stopped['body'])
+            agent = self.room.managed.get(child)
+            self.assertEqual(agent['session'], session)
+            self.assertFalse(agent['error'])
+            self.assertFalse(next(channel for channel in self.room.channels() if channel['id'] == self.channel)['working'])
+        another = self.task('second task', child)
+        self.until(lambda: self.room.snapshot(self.channel)['messages'][-1]['reply_to'] == another['id'])
 
     def test_rejects_external_tasks_and_cross_channel_parent(self):
         parent = self.create('codex', 'Coordinator')
@@ -238,12 +264,52 @@ class ManagedAgentsTest(unittest.TestCase):
             session = self.room.managed.get(agent)['session']
             self.task('expired login')
             self.until(lambda: self.room.managed.get(agent)['error'] == 'managedAuthRequired')
+            for recipient in ('all', agent):
+                with self.assertRaises(ApiError) as blocked:
+                    self.task('new task while signed out', recipient)
+                self.assertEqual(blocked.exception.key, 'managedAuthRequired')
             self.room.managed.login(agent, self.channel)
             self.until(lambda: self.room.managed.get(agent)['error'] is None)
             self.assertEqual(self.room.managed.get(agent)['session'], session)
 
 
 class ManagedProcessTest(unittest.TestCase):
+    def test_codex_disallows_interactive_requests_with_workspace_access(self):
+        agent = {'role': 'codex', 'session': 'existing-session', 'model': '', 'effort': ''}
+        args = managed_cli.command('codex', agent)
+        self.assertEqual(args[:3], ['codex', 'exec', 'resume'])
+        for flag in ('approval_policy="never"', 'sandbox_mode="workspace-write"',
+                     'sandbox_workspace_write.writable_roots=[]', 'sandbox_workspace_write.network_access=false',
+                     'tools.experimental_request_user_input.enabled=false', 'features.request_permissions_tool=false',
+                     'features.tool_call_mcp_elicitation=false'):
+            self.assertIn(flag, args)
+
+    def test_watchdog_allows_progress_and_stops_a_silent_cli(self):
+        session = str(uuid4())
+        program = (
+            'import json, sys, time\n'
+            'assert sys.stdin.read() == "task"\n'
+            'for _ in range(10):\n'
+            '    print(json.dumps({"type":"progress"}), flush=True)\n'
+            '    time.sleep(0.13)\n'
+            'print(json.dumps({"type":"result","session_id":sys.argv[1],"result":"Done"}),flush=True)\n'
+        )
+        with TemporaryDirectory() as directory:
+            active = managed_cli.Turn([sys.executable, '-c', program, session], directory)
+            try:
+                self.assertEqual(active.run('claude', 'task', timeout=8, idle_timeout=0.7)[1], 'Done')
+            finally:
+                active.stop()
+                active.reap()
+            silent = managed_cli.Turn([sys.executable, '-c', 'import time; time.sleep(10)'], directory)
+            try:
+                with self.assertRaises(managed_cli.CliError) as caught:
+                    silent.run('claude', '', 8, idle_timeout=0.25)
+                self.assertEqual(caught.exception.key, 'managedNoProgress')
+            finally:
+                silent.stop()
+                silent.reap()
+
     def test_claude_approves_workspace_edits_with_platform_shell_limits(self):
         agent = {'role': 'claude', 'session': 'existing-session', 'model': 'sonnet', 'effort': 'high'}
         attachments = Path.cwd() / 'var' / 'acs-turn-1234'

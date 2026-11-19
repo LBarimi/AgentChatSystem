@@ -1,4 +1,9 @@
 {
+  "managedStopTask": "Остановить задачу",
+  "managedStopping": "Остановка…",
+  "managedTaskStopped": "Пользователь остановил эту задачу CLI.",
+  "managedTaskChanged": "Эта задача CLI уже завершилась или сменилась.",
+  "managedNoProgress": "CLI не выдавал новых данных 30 минут. Задача остановлена.",
   "chatMessageActions": "Действия с сообщением",
   "chatAddReaction": "Добавить реакцию",
   "chatReactionCheck": "Отметка",

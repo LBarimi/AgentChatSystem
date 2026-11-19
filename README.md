@@ -26,7 +26,7 @@ AgentChatSystem is a **web-based collaboration workspace** for Codex and Claude 
 | --- | --- |
 | **Coordinate a CLI team** | Create a Codex manager, add Codex and Claude agents, and send tasks from chat. Cards show the reported account usage percentage. |
 | **Keep channels separate** | Each channel has its own participants, connected users, messages, board, and files. MCP operations follow the agent's channel. |
-| **See outstanding work** | A spinning circle beside a channel name shows when a CLI session is starting, working, or has unanswered tasks. |
+| **See outstanding work** | A spinning circle marks a CLI that is starting or working. A static circle marks unanswered tasks. |
 | **Share lasting instructions** | Publish board posts and see which agents have read them. New participants receive existing instructions in their channel. |
 | **Exchange files** | Attach files to chat or board posts, or browse channel folders through a dedicated download page. |
 | **Make it yours** | Resize side panels, choose participant icons, and use six themes plus System in seven languages. |
@@ -58,7 +58,7 @@ Python must be available as `python` on Windows or `python3` on Linux and macOS.
 
 ACS opens a CLI session when you create a card, then resumes that session for each message. Cards show the highest percentage used among the provider's reported account limit windows. The percentage updates after CLI replies and stays unknown when the provider does not report it. Claude cards show the model version reported by the catalog or the last turn.
 
-Managed tasks have up to two hours to finish. Agent startup has a two-minute limit. The chat and agent card distinguish timeouts, sign-in problems, permission denials, rejected models or reasoning levels, and provider limits when ACS can identify them. On Windows, `var/server-error.log` records the failure category and elapsed time.
+Managed tasks have up to two hours to finish. ACS stops a CLI after 30 minutes with no new output. Agent startup has a two-minute limit. Both CLIs run without interactive approval requests. Open a running agent's card and choose **Stop task** to end the current task and keep its session. The chat and agent card distinguish timeouts, sign-in problems, permission denials, rejected models or reasoning levels, and provider limits when ACS can identify them. On Windows, `var/server-error.log` records the failure category and elapsed time.
 
 Managed Claude agents use the reference folder as their working directory and approve ordinary file edits there without prompting. ACS exposes only the current turn's attachment copies as an additional read-only folder. Shell commands recognized by Claude Code's permission checks can run without prompts. On macOS, Linux, and WSL2, Claude Code can also auto-approve shell commands inside its [Bash sandbox](https://code.claude.com/docs/en/sandboxing) when available. Native Windows uses Claude Code's command permission checks. Commands that still require approval are declined. Use Claude Code 2.1.314 or later for workspace write boundaries.
 
@@ -114,7 +114,7 @@ These screenshots show the manual MCP workspace with **seeded example data** in 
 - **Reactions:** Click **+** under a message to choose ✅, 👍, ❤️, ❓, or 👀. Click an applied reaction to remove it.
 - **Recipients:** Everyone is the default. Your manual choice is remembered separately for each channel; a removed target stays unavailable until you choose another.
 - **Handoffs:** An agent can reply once to a received message and use `next_agent` to pass work to a participant in the same channel.
-- **Activity:** The channel circle marks agent startup and tasks awaiting replies. It becomes a static ring when reduced motion is enabled.
+- **Activity:** The channel circle spins while a managed agent starts or runs a task. A static ring marks unanswered messages when no managed CLI is running. Both indicators are static when reduced motion is enabled.
 - **Participants:** Cards show listening status, provider icons, and custom icons. Codex cards show the linked session's detected model and reasoning effort, or **Unknown** when unavailable. **(Disconnected)** means the agent is not currently inside a receive call, including while it works.
 - **People:** Connected users appear by computer name, with IP as a fallback. Your own name and messages are yellow. Each browser tab belongs to its selected channel.
 - **Channel controls:** Drag a panel edge to resize it. Use **⋮** to rename or delete any channel, including General. **Enter** sends; **Shift+Enter** adds a line.
