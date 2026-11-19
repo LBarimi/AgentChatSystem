@@ -99,6 +99,7 @@ class ManagedAgentsTest(unittest.TestCase):
         self.assertEqual([m['sender'] for m in snapshot['messages']], [parent, child, 'user', parent, child, parent])
         self.assertEqual([p['usage']['total'] for p in snapshot['participants']], [42, 12])
         self.assertEqual(snapshot['participants'][1]['parent_id'], parent)
+        self.assertEqual([item['is_manager'] for item in snapshot['participants']], [1, 0])
         self.assertNotIn('cwd', self.room.snapshot(self.channel, viewer_address='192.168.1.10')['participants'][0])
         self.assertNotIn('prompt', self.room.setup(parent, 9081, channel_id=self.channel))
 
@@ -114,7 +115,10 @@ class ManagedAgentsTest(unittest.TestCase):
         self.assertTrue(running.stopped.is_set())
         self.assertEqual(self.room.participants(self.channel), [])
         self.until(lambda: not self.room.managed.threads)
-        self.assertEqual(self.room.snapshot(self.channel)['total_messages'], 3)
+        snapshot = self.room.snapshot(self.channel)
+        self.assertEqual(snapshot['total_messages'], 3)
+        self.assertEqual({item['id']: item['is_manager'] for item in snapshot['archived_participants']},
+                         {parent: 1, child: 0})
 
     def test_rejects_external_tasks_and_cross_channel_parent(self):
         parent = self.create('codex', 'Coordinator')
@@ -227,8 +231,10 @@ class ManagedCreationOptionsTest(unittest.TestCase):
             packets = []
             event = {'type': 'control_response', 'response': {
                 'request_id': 'acs-picker', 'subtype': 'success', 'response': {'models': [
-                    {'value': 'default', 'displayName': 'Default', 'supportedEffortLevels': ['low', 'max']},
-                    {'value': 'opus[1m]', 'displayName': 'Opus', 'supportedEffortLevels': ['high']},
+                    {'value': 'default', 'displayName': 'Default', 'resolvedModel': 'claude-opus-5-5',
+                     'supportedEffortLevels': ['low', 'max']},
+                    {'value': 'opus[1m]', 'displayName': 'Opus', 'resolvedModel': 'claude-opus-5-5[1m]',
+                     'supportedEffortLevels': ['high']},
                 ]},
             }}
 
@@ -244,6 +250,7 @@ class ManagedCreationOptionsTest(unittest.TestCase):
                 patch.object(managed_options, 'metadata_session', session):
             models = catalog.get('claude')['models']
             self.assertEqual([option['id'] for option in models], ['', 'opus[1m]'])
+            self.assertEqual([option['name'] for option in models], ['Opus 5.5', 'Opus 5.5 (1M)'])
             catalog.validate('claude', 'opus[1m]', 'high')
         with patch.object(managed_cli, 'require_executable', return_value='claude'), \
                 patch.object(managed_options, 'metadata_session', side_effect=managed_cli.CliError('Unavailable')):

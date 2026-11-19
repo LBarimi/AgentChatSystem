@@ -134,7 +134,7 @@
         <div><h2 id="agents-title"><span data-i18n="participants">참가자</span> <span id="agent-count">0</span></h2><p id="agent-summary" data-i18n="connecting">연결 중</p></div>
         <button class="button icon-button close-agents" id="close-agents" type="button" title="참가자 닫기" data-i18n-title="closeParticipants"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg><span class="sr-only" data-i18n="closeParticipants">참가자 닫기</span></button>
       </div>
-      <button class="button add-agent" id="add-agent" type="button" disabled><svg class="icon"><use href="/vendor/icons.svg#plus"></use></svg><span id="add-agent-label" data-i18n="managedCreate">에이전트 생성</span></button>
+      <button class="button add-agent" id="add-agent" type="button" disabled><svg class="icon"><use href="/vendor/icons.svg#plus"></use></svg><span id="add-agent-label" data-i18n="managedCreateParent">관리자 생성</span></button>
       <div class="roster" id="roster"></div>
       <section class="connected-users" aria-labelledby="users-title">
         <h3 id="users-title"><span data-i18n="connectedUsers">접속 중인 사용자</span><span id="user-count">0</span></h3>
@@ -261,7 +261,7 @@
   </dialog>
   <dialog id="join-dialog" aria-labelledby="join-title">
     <form class="dialog-body" id="join-form">
-      <header><h2 id="join-title">Codex</h2><button class="button icon-button" type="button" data-close="join-dialog" aria-label="닫기" data-i18n-aria-label="close"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button></header>
+      <header><h2 id="join-title">관리자 생성</h2><button class="button icon-button" type="button" data-close="join-dialog" aria-label="닫기" data-i18n-aria-label="close"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button></header>
       <label><span data-i18n="nickname">닉네임</span><input id="join-name" maxlength="32" placeholder="예: Codex 구현" data-i18n-placeholder="nicknameExample" required></label>
       <div class="agent-create-field">
         <label for="join-cwd" data-i18n="managedFolder">레퍼런스 폴더 경로</label>

@@ -157,9 +157,18 @@ def claude_models(program, cwd):
         if response.get('subtype') != 'success':
             raise managed_cli.CliError('The CLI did not return model metadata')
         for model in response['response']['models']:
+            name = model.get('displayName', model['value'])
+            resolved = model.get('resolvedModel') or model['value']
+            match = re.fullmatch(r'claude-([a-z]+)-(\d+(?:-\d+)*)(?:\[1m\])?', resolved)
+            if match:
+                family, version = match.groups()
+                concrete_name = f'{family.title()} {version.replace("-", ".")}'
+                if resolved.endswith('[1m]'):
+                    concrete_name += ' (1M)'
+                name = concrete_name
             yield {
                 'id': '' if model['value'] == 'default' else model['value'],
-                'name': model.get('displayName', model['value']),
+                'name': name,
                 'efforts': model.get('supportedEffortLevels') or [],
                 'default_effort': '',
                 'default_model': model['value'] == 'default',

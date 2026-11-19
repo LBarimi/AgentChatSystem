@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from threading import Thread
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 from urllib.parse import urlencode, unquote
 from uuid import uuid4
 
@@ -64,6 +65,18 @@ class NetworkAccess(unittest.TestCase):
         self.assertEqual(health['listen_host'], '0.0.0.0')
         self.assertEqual(health['service'], 'AgentChatSystem')
         self.assertEqual(self.server.server_address[0], '0.0.0.0')
+
+    @unittest.skipUnless(sys.platform == 'win32', 'Windows system folder picker')
+    def test_folder_picker_returns_selected_path_and_cancel(self):
+        host = f'127.0.0.1:{self.port}'
+        selected = Path(self.temporary.name) / '선택 폴더'
+        selected.mkdir()
+        payload = {'path': str(selected), 'language': 'ko'}
+        with patch('relay.server.choose_folder', side_effect=[str(selected), None]) as picker:
+            status, body = self.call('/api/managed/folder-picker', host=host, payload=payload)
+            self.assertEqual((status, body['path']), (200, str(selected.resolve())))
+            self.assertEqual(self.call('/api/managed/folder-picker', host=host, payload=payload), (200, {'path': None}))
+            picker.assert_called_with(selected.resolve(), 'AgentChatSystem · 폴더 선택')
 
     def test_default_channel_delete_and_empty_workspace_api(self):
         host = f'127.0.0.1:{self.port}'

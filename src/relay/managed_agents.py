@@ -57,6 +57,15 @@ class ManagedAgents:
             );
             CREATE INDEX IF NOT EXISTS managed_parent ON managed_agents(parent_id);
         """)
+        columns = {row['name'] for row in self.db.execute('PRAGMA table_info(participants)')}
+        if 'is_manager' not in columns:
+            with self.db:
+                self.db.execute('BEGIN')
+                self.db.execute('ALTER TABLE participants ADD COLUMN is_manager INTEGER NOT NULL DEFAULT 0')
+                self.db.execute("""
+                    UPDATE participants SET is_manager=1
+                    WHERE id IN (SELECT id FROM managed_agents WHERE parent_id IS NULL)
+                """)
 
     def get(self, agent_id):
         return self.db.execute("""
@@ -154,6 +163,8 @@ class ManagedAgents:
                 self.db.execute("""
                     INSERT INTO managed_agents(id,parent_id,cwd,model,effort,language) VALUES (?,?,?,?,?,?)
                 """, (agent['id'], parent_id, str(cwd), model, effort, language))
+                if parent_id is None:
+                    self.db.execute('UPDATE participants SET is_manager=1 WHERE id=?', (agent['id'],))
             self.room._notify_board()
             self.room._write_board(channel_id)
             self._start(agent['id'])

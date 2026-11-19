@@ -20,8 +20,9 @@ from relay import managed_cli
 from relay.board import Board, prepare_post
 from relay.chat_files import ChatFiles, prepare_chat_files
 from relay.errors import ApiError
-from relay.managed_agents import ManagedAgents
-from relay.managed_options import folders as managed_folders
+from relay.managed_agents import ManagedAgents, catalog as managed_labels
+from relay.managed_options import folder_path, folders as managed_folders
+from relay.windows_picker import choose_folder
 from relay.storage import ChannelStorage, StorageError, TEXT_BYTES
 from relay.uploads import MAX_FILES, MAX_FILE_BYTES, MAX_UPLOAD_REQUEST, UploadError, UploadStore, file_data, prepare_files, upload_policy, validate_file
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, LEGACY_MAX_WAIT_SECONDS, MCP_VERSION, LEGACY_PNG_PROMPT
@@ -614,7 +615,7 @@ class Room:
             scope = 'AND m.channel_id=?'
             params = (channel_id,)
             pending = dict(self.db.execute(f'SELECT d.agent_id, COUNT(*) {PENDING_MESSAGES} {scope} GROUP BY d.agent_id', params))
-            participants = self.db.execute('SELECT id,role,name,icon,channel_id FROM participants WHERE removed_at IS NULL AND channel_id=? ORDER BY rowid', (channel_id,)).fetchall()
+            participants = self.db.execute('SELECT id,role,name,icon,channel_id,is_manager FROM participants WHERE removed_at IS NULL AND channel_id=? ORDER BY rowid', (channel_id,)).fetchall()
             return [
                 dict(p) | {
                     'waiting': p['id'] in self.waiters and (
@@ -633,7 +634,7 @@ class Room:
             return []
         placeholders = ','.join('?' for _ in ids)
         return [dict(row) for row in self.db.execute(f'''
-            SELECT id,role,name,icon,channel_id FROM participants WHERE id IN ({placeholders})
+            SELECT id,role,name,icon,channel_id,is_manager FROM participants WHERE id IN ({placeholders})
         ''', tuple(ids))]
 
     def snapshot(self, channel_id, *, viewer_address=None):
@@ -650,6 +651,7 @@ class Room:
                 "channels": self.channels(),
                 "participants": self.participants(channel_id, local=managed_local) if channel else [],
                 "managed_local": managed_local,
+                "native_folder_picker": managed_local and os.name == 'nt',
                 "cli_available": {role: bool(managed_cli.executable(role)) for role in ROLES} if managed_local else {},
                 "users": self.users.snapshot(channel_id),
                 "viewer": self.users.identity(viewer_address),
@@ -1190,6 +1192,18 @@ class Handler(BaseHTTPRequestHandler):
             elif self.path == '/api/managed/folders':
                 self._check_managed_local()
                 self._json(managed_folders(payload.get('path'), PROJECT))
+            elif self.path == '/api/managed/folder-picker':
+                self._check_managed_local()
+                if os.name != 'nt':
+                    raise RequestError('The Windows folder picker is unavailable.', 501, key='managedPickerUnavailable')
+                try:
+                    initial = folder_path(payload.get('path'), browsing=True)
+                except ApiError:
+                    initial = PROJECT
+                language = payload.get('language')
+                title = managed_labels(language if language in LANGUAGES else 'en')['managedSelectFolder']
+                selected = choose_folder(initial, f'{APP_NAME} · {title}')
+                self._json({'path': str(folder_path(selected)) if selected else None})
             elif self.path == '/api/managed/auth':
                 self._check_managed_local()
                 self._json(self.room.managed.login(payload.get('id'), payload.get('channel_id')), 202)

@@ -18,7 +18,7 @@ Windows · Linux · macOS</p>
 
 <p align="center"><em>Two Codex sessions. Two Claude sessions. One shared channel.</em></p>
 
-AgentChatSystem is a **web-based collaboration workspace** for Codex and Claude sessions running on your computer. Create a Codex parent and a team of CLI agents from the browser. The workspace also supports existing MCP connections and browsing from your trusted LAN.
+AgentChatSystem is a **web-based collaboration workspace** for Codex and Claude sessions running on your computer. Create a Codex manager and a team of CLI agents from the browser. The workspace also supports existing MCP connections and browsing from your trusted LAN.
 
 ## What you can do
 
@@ -45,15 +45,15 @@ Creation buttons show which CLI is required when ACS cannot find its executable.
    | Linux / macOS | Run `sh bin/start.sh`, then open the printed address. |
 
 3. Open **http://127.0.0.1:9081/** in your browser.
-4. [Create a Codex parent](#connect-your-agents) and send it a task.
+4. [Create a manager](#connect-your-agents) and send it a task.
 
 Python must be available as `python` on Windows or `python3` on Linux and macOS. Launchers build the runtime when it is missing. After updating an existing checkout, [rebuild the runtime](#update-and-build) before restarting.
 
 ## Connect your agents
 
-1. Select a channel on localhost and click **Create agent**. Enter a nickname and use **Browse** to choose a reference folder on the server computer, or enter an absolute path. ACS uses that folder as the CLI working directory. The installed CLI supplies the model list. The reasoning menu updates to match the selected model. When the catalog is unavailable, you can start with the CLI defaults.
+1. Select a channel on localhost and click **Create manager**. Enter a nickname and use **Browse** to choose the working folder. Windows opens the system folder dialog. Linux and macOS use the browser's folder list. The installed CLI supplies the model list and the reasoning levels for each model. Claude options include the version when the CLI reports it.
 2. ACS starts the CLI with its existing configuration. If the provider reports an authentication error, open the agent card marked **Sign-in required** and choose **Sign in to CLI**. Finish in the provider's browser and ACS retries that card. If you configure credentials separately, choose **Retry CLI startup**.
-3. Wait for **Agent created and ready** in chat. From the parent card, choose **Create Codex agent** or **Create Claude agent** and fill in the same fields.
+3. Wait for **Agent created and ready** in chat. The manager's nickname appears in blue. Choose **Create Codex** or **Create Claude** at the bottom of the manager's card and fill in the same fields.
 4. Send a task to the parent. It can hand a task to one of its children, receive the result in the same conversation, and answer in the channel. You can also address a child directly. **Everyone** delivers to ready parents and existing manual MCP participants. Children receive delegated or directly addressed tasks.
 
 ACS opens a CLI session when you create a card, then resumes that session for each message. The CLI process exits between messages. The card displays cumulative session tokens and shows the most recent turn's input and output in a tooltip. These counts update when a CLI turn reports usage. Provider account quotas are separate.

@@ -6,6 +6,7 @@ AgentChatSystem ist ein lokaler Arbeitsbereich für Codex- und Claude-Sitzungen 
 
 ## Neuerungen in 1.0.0
 
+- Der Name des Codex-Managers erscheint blau. Auf seiner Karte stehen die Schaltflächen für Codex und Claude nebeneinander. Unter Windows öffnet sich die Systemordnerauswahl. Die Claude-Liste zeigt Modellversionen.
 - Wenn ACS die benötigte CLI nicht findet, bleibt die Schaltfläche zum Erstellen deaktiviert und nennt die erforderliche CLI.
 - Beim Erstellen eines Agenten kannst du einen Ordner auf dem Server auswählen. Die installierte CLI liefert die Modelle und den jeweils verfügbaren Denkaufwand.
 - Agenten starten mit der vorhandenen CLI-Konfiguration. Meldet die CLI einen Authentifizierungsfehler, bietet die Karte die Anmeldung an.

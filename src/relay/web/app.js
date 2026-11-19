@@ -145,7 +145,7 @@ function refreshControls() {
   const missingCodex = missingCli("codex");
   const addAgent = el("add-agent");
   addAgent.disabled = !ready || !hasChannel || !current.managed_local || Boolean(missingCodex);
-  el("add-agent-label").textContent = missingCodex ? t("managedCliInstallRequired", missingCodex) : t("managedCreate");
+  el("add-agent-label").textContent = missingCodex ? t("managedCliInstallRequired", missingCodex) : t("managedCreateParent");
   addAgent.title = missingCodex ? t("managedCliMissing", missingCodex) : current?.managed_local ? "" : t("managedLocalOnly");
   el("add-channel").disabled = !ready;
   el("empty-add-channel").disabled = !ready;
@@ -259,7 +259,7 @@ function participantCard(agent) {
   if (agent.error) status.title = t(agent.error);
   const details = element("span", "agent-details");
   const nameLine = element("span", "agent-name-line");
-  const name = element("strong", "", agent.name);
+  const name = element("strong", agent.is_manager ? "manager-name" : "", agent.name);
   name.title = agent.name;
   nameLine.append(name);
   if (!online && !agent.managed) {
@@ -291,7 +291,9 @@ function showParticipants() {
     const section = element("section", "roster-group agent-team");
     const heading = element("h3");
     heading.append(providerIcon("codex"), element("span", "", t("managedParent")));
-    section.append(heading, participantCard(parent));
+    const card = element("div", "agent-manager-card");
+    card.append(participantCard(parent));
+    section.append(heading, card);
     if (current.managed_local) {
       const actions = element("div", "agent-team-actions");
       for (const role of ["codex", "claude"]) {
@@ -305,7 +307,7 @@ function showParticipants() {
         if (missing) action.title = t("managedCliMissing", missing);
         actions.append(action);
       }
-      section.append(actions);
+      card.append(actions);
     }
     const children = agents.filter((agent) => agent.parent_id === parent.id);
     if (children.length) {
@@ -399,8 +401,9 @@ function row(message, participants) {
   item.id = "message-" + message.id;
   const content = element("div");
   const meta = element("div", "message-meta");
-  meta.append(element("strong", "", sender?.name || (message.sender === "user" ? user.label : message.sender)));
+  meta.append(element("strong", sender?.is_manager ? "manager-name" : "", sender?.name || (message.sender === "user" ? user.label : message.sender)));
   const route = element("span", "message-route");
+  route.classList.toggle("manager-name", Boolean(to?.is_manager));
   const target = message.recipient === "all" ? t("all") : to?.name;
   route.append(icon(target ? "arrow-right" : "check"), target || t("channelReply"));
   meta.append(route);
@@ -423,7 +426,7 @@ function row(message, participants) {
 function applyRoom(snapshot, repaint = false) {
   const boardChanged = current?.board_revision !== snapshot.board_revision;
   const lastParticipants = participantKey;
-  participantKey = JSON.stringify(snapshot.participants.map(({ id, name, role, icon }) => [id, name, role, icon]));
+  participantKey = JSON.stringify(snapshot.participants.map(({ id, name, role, icon, is_manager }) => [id, name, role, icon, is_manager]));
   const dirtyRoster = !current || JSON.stringify([snapshot.participants, snapshot.cli_available])
     !== JSON.stringify([current.participants, current.cli_available]);
   const dirtyUsers = !current || JSON.stringify([snapshot.viewer, snapshot.users]) !== JSON.stringify([current.viewer, current.users]);
@@ -943,7 +946,9 @@ function setSetupPromptLoading() {
 }
 
 function renderSetupPrompts(setup, language) {
-  const name = current?.participants.find((agent) => agent.id === setup.id)?.name || setup.name;
+  const agent = current?.participants.find((item) => item.id === setup.id);
+  const name = agent?.name || setup.name;
+  el("setup-title").className = agent?.is_manager ? "manager-name" : "";
   el("setup-title").textContent = t("connectAgent", { name });
   el("setup-id").textContent = roleName[setup.role] + " · " + setup.id;
   el("setup-managed").hidden = !setup.managed;
@@ -1159,7 +1164,7 @@ async function loadFolderPicker(path, { initial = false, focus = false } = {}) {
 
 el("join-model").addEventListener("change", showJoinEfforts);
 el("join-model-retry").addEventListener("click", () => loadJoinModels(true));
-el("join-browse").addEventListener("click", () => {
+function openBrowserFolderPicker() {
   if (!el("join-browser").hidden) {
     closeFolderPicker();
     return;
@@ -1171,6 +1176,27 @@ el("join-browse").addEventListener("click", () => {
   el("join-folder-list").replaceChildren();
   el("join-folder-roots").replaceChildren();
   loadFolderPicker(el("join-cwd").value.trim(), { initial: true });
+}
+el("join-browse").addEventListener("click", async () => {
+  if (!current?.native_folder_picker) {
+    openBrowserFolderPicker();
+    return;
+  }
+  const context = joinContext;
+  const button = el("join-browse");
+  button.disabled = true;
+  showMessage("join-error", "");
+  try {
+    const choice = await request("/api/managed/folder-picker", {
+      path: el("join-cwd").value.trim(), language: document.documentElement.lang,
+    });
+    if (joinDialog.open && joinContext === context && choice.path) el("join-cwd").value = choice.path;
+  } catch (error) {
+    if (joinDialog.open && joinContext === context) showMessage("join-error", error.message);
+  } finally {
+    button.disabled = false;
+    if (joinDialog.open && joinContext === context) button.focus();
+  }
 });
 el("join-folder-up").addEventListener("click", () => {
   if (joinFolder?.parent) loadFolderPicker(joinFolder.parent);
@@ -1189,7 +1215,9 @@ function openAgentCreation(role, parent) {
   el("join-form").reset();
   closeFolderPicker();
   joinContext = { role, parent_id: parent?.id ?? null, channel_id: activeChannel };
-  el("join-title").textContent = t(parent ? (role === "codex" ? "managedCodexChild" : "managedClaudeChild") : "managedCreateParent");
+  const title = t(parent ? (role === "codex" ? "managedCodexChild" : "managedClaudeChild") : "managedCreateParent");
+  el("join-title").textContent = title;
+  el("join-submit").textContent = title;
   el("join-cwd").value = parent?.cwd || "";
   showMessage("join-error", "");
   joinDialog.showModal();

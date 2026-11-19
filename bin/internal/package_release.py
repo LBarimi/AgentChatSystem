@@ -24,6 +24,7 @@ SOURCE_FILES = (
     'src/relay/managed_agents.py',
     'src/relay/managed_cli.py',
     'src/relay/managed_options.py',
+    'src/relay/windows_picker.py',
     'src/relay/mcp.py',
     'src/relay/prompt_locales.json',
     'src/relay/prompts.py',
