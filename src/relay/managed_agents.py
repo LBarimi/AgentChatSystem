@@ -3,19 +3,16 @@ import json
 from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
-import re
 import subprocess
 from tempfile import TemporaryDirectory
 from threading import Thread
 
 from relay.errors import ApiError
 from relay import managed_cli
+from relay.managed_options import ROLES, ModelOptions, folder_path
+from relay.settings import PROJECT
 
 
-EFFORTS = {
-    'codex': ('low', 'medium', 'high', 'xhigh'),
-    'claude': ('low', 'medium', 'high', 'xhigh', 'max'),
-}
 PARENT_SCHEMA = {
     'type': 'object',
     'properties': {
@@ -38,6 +35,7 @@ class ManagedAgents:
         self.room = room
         self.db = room.db
         self.data_dir = data_dir
+        self.options = ModelOptions(PROJECT)
         self.pending_sql = pending_sql
         self.processes = {}
         self.logins = {}
@@ -134,26 +132,15 @@ class ManagedAgents:
     def create(self, payload, language):
         parent_id = payload.get('parent_id')
         role = payload.get('role')
-        if not isinstance(role, str) or role not in EFFORTS or (parent_id is None and role != 'codex'):
+        if role not in ROLES or (parent_id is None and role != 'codex'):
             raise ApiError('Choose a supported agent type.', key='errorRole')
         if parent_id is not None and (not isinstance(parent_id, str) or len(parent_id) > 32):
             raise ApiError('Choose a Codex parent in this channel.', key='managedParentMissing')
-        raw_path = payload.get('cwd')
-        try:
-            if not isinstance(raw_path, str) or not raw_path or '\0' in raw_path or not Path(raw_path).is_absolute():
-                raise ValueError
-            cwd = Path(raw_path).resolve(strict=True)
-            if not cwd.is_dir():
-                raise ValueError
-        except (OSError, RuntimeError, ValueError):
-            raise ApiError('Enter an existing absolute folder path.', key='managedFolderInvalid') from None
+        cwd = folder_path(payload.get('cwd'))
         model = payload.get('model', '')
-        if not isinstance(model, str) or (model and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.::_/-]{0,127}', model)):
-            raise ApiError('Enter a model ID or choose the CLI default.', key='managedModelInvalid')
-        effort = payload.get('effort')
-        if effort not in EFFORTS[role]:
-            raise ApiError('Choose a supported reasoning level.', key='managedEffortInvalid')
+        effort = payload.get('effort', '')
         managed_cli.require_executable(role)
+        self.options.validate(role, model, effort)
         with self.room.changed:
             if self.closed:
                 raise ApiError('ACS is stopping.', 503, key='errorUnavailable')

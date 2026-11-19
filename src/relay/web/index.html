@@ -263,9 +263,32 @@
     <form class="dialog-body" id="join-form">
       <header><h2 id="join-title">Codex</h2><button class="button icon-button" type="button" data-close="join-dialog" aria-label="닫기" data-i18n-aria-label="close"><svg class="icon"><use href="/vendor/icons.svg#x"></use></svg></button></header>
       <label><span data-i18n="nickname">닉네임</span><input id="join-name" maxlength="32" placeholder="예: Codex 구현" data-i18n-placeholder="nicknameExample" required></label>
-      <label><span data-i18n="managedFolder">레퍼런스 폴더 경로</span><input id="join-cwd" autocapitalize="off" spellcheck="false" required></label>
-      <label><span data-i18n="model">모델</span><input id="join-model" list="join-models" maxlength="128" autocapitalize="off" spellcheck="false" data-i18n-placeholder="managedModelDefault" placeholder="CLI 기본값"><datalist id="join-models"></datalist></label>
-      <label><span data-i18n="reasoningEffort">추론 강도</span><select id="join-effort" required></select></label>
+      <div class="agent-create-field">
+        <label for="join-cwd" data-i18n="managedFolder">레퍼런스 폴더 경로</label>
+        <div class="agent-path-field">
+          <input id="join-cwd" autocapitalize="off" spellcheck="false" required>
+          <button class="button secondary" id="join-browse" type="button" aria-controls="join-browser" aria-expanded="false">
+            <svg class="icon"><use href="/vendor/icons.svg#folder"></use></svg><span data-i18n="managedBrowse">찾아보기</span>
+          </button>
+        </div>
+      </div>
+      <section class="agent-folder-picker" id="join-browser" aria-labelledby="join-folder-label" hidden>
+        <div class="agent-folder-toolbar">
+          <strong id="join-folder-label" data-i18n="managedSelectFolder">폴더 선택</strong>
+          <button class="button secondary" id="join-folder-up" type="button" data-i18n="managedFolderUp" disabled>상위 폴더</button>
+        </div>
+        <select id="join-folder-roots" aria-label="위치" data-i18n-aria-label="managedLocations"></select>
+        <p class="agent-folder-location" id="join-folder-location"></p>
+        <p id="join-folder-status" role="status"></p>
+        <ul id="join-folder-list" aria-labelledby="join-folder-label"></ul>
+        <button class="button primary" id="join-folder-select" type="button" data-i18n="managedUseFolder" disabled>이 폴더 선택</button>
+      </section>
+      <label><span data-i18n="model">모델</span><select id="join-model" disabled></select></label>
+      <label><span data-i18n="reasoningEffort">추론 강도</span><select id="join-effort"></select></label>
+      <div class="agent-catalog-status" id="join-catalog-status" hidden>
+        <p id="join-model-status" role="status"></p>
+        <button class="button secondary" id="join-model-retry" type="button" data-i18n="managedReloadModels" hidden>목록 다시 불러오기</button>
+      </div>
       <p class="form-error" id="join-error" role="alert" hidden></p>
       <footer><button class="button secondary" type="button" data-close="join-dialog" data-i18n="cancel">취소</button><button class="button primary" id="join-submit" type="submit" data-i18n="managedCreate">에이전트 생성</button></footer>
     </form>

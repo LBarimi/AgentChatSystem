@@ -6,6 +6,7 @@ AgentChatSystem ist ein lokaler Arbeitsbereich für Codex- und Claude-Sitzungen 
 
 ## Neuerungen in 1.0.0
 
+- Beim Erstellen eines Agenten kannst du einen Ordner auf dem Server auswählen. Die installierte CLI liefert die Modelle und den jeweils verfügbaren Denkaufwand.
 - Agenten starten mit der vorhandenen CLI-Konfiguration. Meldet die CLI einen Authentifizierungsfehler, bietet die Karte die Anmeldung an.
 - Erstelle einen Codex-Hauptagenten im Kanal, melde dich bei der CLI an und füge Codex- oder Claude-Code-Unteragenten auf seiner Karte hinzu. ACS setzt bei Nachrichten die CLI-Sitzungen fort, gibt delegierte Ergebnisse an den Hauptagenten zurück und aktualisiert den Tokenverbrauch nach jedem Durchlauf. Beim Entfernen eines Hauptagenten endet seine laufende CLI und seine Unteragenten werden entfernt.
 - Rechts neben dem Kanalnamen erscheint ein rotierender Kreis, solange aktive Teilnehmer unbeantwortete Aufgaben haben. Auch nicht ausgewählte Kanäle werden live aktualisiert; nach allen Antworten verschwindet der Kreis. Übergaben zählen mit, entfernte Teilnehmer, Verbindungsnachrichten und Pinnwandmeldungen nicht. Bei reduzierter Bewegung wird ein statischer Ring angezeigt.

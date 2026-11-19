@@ -1,4 +1,5 @@
 import json
+from contextlib import contextmanager
 from pathlib import Path
 import subprocess
 import sys
@@ -10,7 +11,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from relay import managed_cli
+from relay import managed_cli, managed_options
 from relay.errors import ApiError
 from relay.server import Room
 
@@ -68,7 +69,7 @@ class ManagedAgentsTest(unittest.TestCase):
     def create(self, role, name, parent=None, channel=None):
         return self.room.managed.create({
             'role': role, 'name': name, 'cwd': str(self.directory), 'model': '',
-            'effort': 'medium', 'parent_id': parent, 'channel_id': channel or self.channel,
+            'effort': '', 'parent_id': parent, 'channel_id': channel or self.channel,
         }, 'en')['id']
 
     def until(self, predicate):
@@ -206,3 +207,87 @@ class ManagedProcessTest(unittest.TestCase):
             finally:
                 turn.stop()
                 turn.reap()
+
+
+class ManagedCreationOptionsTest(unittest.TestCase):
+    def test_claude_uses_cli_models_and_allows_defaults_if_metadata_is_unavailable(self):
+        @contextmanager
+        def session(args, cwd):
+            packets = []
+            event = {'type': 'control_response', 'response': {
+                'request_id': 'acs-picker', 'subtype': 'success', 'response': {'models': [
+                    {'value': 'default', 'displayName': 'Default', 'supportedEffortLevels': ['low', 'max']},
+                    {'value': 'opus[1m]', 'displayName': 'Opus', 'supportedEffortLevels': ['high']},
+                ]},
+            }}
+
+            def receive(matches):
+                self.assertEqual(packets[0]['request']['subtype'], 'initialize')
+                self.assertTrue(matches(event))
+                return event
+
+            yield packets.append, receive
+
+        catalog = managed_options.ModelOptions(Path.cwd())
+        with patch.object(managed_cli, 'require_executable', return_value='claude'), \
+                patch.object(managed_options, 'metadata_session', session):
+            models = catalog.get('claude')['models']
+            self.assertEqual([option['id'] for option in models], ['', 'opus[1m]'])
+            catalog.validate('claude', 'opus[1m]', 'high')
+        with patch.object(managed_cli, 'require_executable', return_value='claude'), \
+                patch.object(managed_options, 'metadata_session', side_effect=managed_cli.CliError('Unavailable')):
+            self.assertEqual(catalog.get('claude', refresh=True), {'models': [], 'available': False})
+            catalog.validate('claude', '', '')
+
+    def test_lists_all_codex_pages_and_validates_effort_for_selected_model(self):
+        requests = []
+
+        def model(name, levels, default=False):
+            return {
+                'model': name, 'displayName': name, 'isDefault': default,
+                'supportedReasoningEfforts': [{'reasoningEffort': level} for level in levels],
+                'defaultReasoningEffort': levels[0],
+            }
+
+        @contextmanager
+        def session(args, cwd):
+            self.assertEqual(args[1:3], ['app-server', '--listen'])
+
+            def receive(matches):
+                packet = requests[-1]
+                response = {}
+                if packet['method'] == 'model/list':
+                    if packet['params']['cursor'] is None:
+                        response = {'data': [model('gpt-a', ['low', 'ultra'], True)], 'nextCursor': '2'}
+                    else:
+                        self.assertEqual(packet['params']['cursor'], '2')
+                        response = {'data': [model('gpt-b', ['medium', 'max'])]}
+                event = {'id': packet['id'], 'result': response}
+                self.assertTrue(matches(event))
+                return event
+
+            yield requests.append, receive
+
+        catalog = managed_options.ModelOptions(Path.cwd())
+        with patch.object(managed_cli, 'require_executable', return_value='codex'), \
+                patch.object(managed_options, 'metadata_session', session):
+            models = catalog.get('codex')['models']
+            self.assertEqual([item['id'] for item in models], ['gpt-a', 'gpt-b'])
+            self.assertTrue(models[0]['default_model'])
+            catalog.validate('codex', 'gpt-a', 'ultra')
+            with self.assertRaises(ApiError) as rejected:
+                catalog.validate('codex', 'gpt-b', 'ultra')
+            self.assertEqual(rejected.exception.key, 'managedEffortInvalid')
+            self.assertEqual(len(requests), 4)
+
+    def test_folder_picker_lists_only_directories_and_reports_parent(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            nested = root / '문서'
+            nested.mkdir()
+            (root / 'file.txt').touch()
+            listing = managed_options.folders('', root)
+            self.assertEqual(listing['folders'], [{'name': '문서', 'path': str(nested)}])
+            self.assertEqual(managed_options.folders(str(nested), root)['parent'], str(root))
+            with self.assertRaises(ApiError):
+                managed_options.folders(str(root / 'file.txt'), root)

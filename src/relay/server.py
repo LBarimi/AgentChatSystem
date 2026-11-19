@@ -20,10 +20,11 @@ from relay.board import Board, prepare_post
 from relay.chat_files import ChatFiles, prepare_chat_files
 from relay.errors import ApiError
 from relay.managed_agents import ManagedAgents
+from relay.managed_options import folders as managed_folders
 from relay.storage import ChannelStorage, StorageError, TEXT_BYTES
 from relay.uploads import MAX_FILES, MAX_FILE_BYTES, MAX_UPLOAD_REQUEST, UploadError, UploadStore, file_data, prepare_files, upload_policy, validate_file
 from relay.guidance import DEFAULT_WAIT_SECONDS, MAX_WAIT_SECONDS, LEGACY_MAX_WAIT_SECONDS, MCP_VERSION, LEGACY_PNG_PROMPT
-from relay.settings import APP_NAME, LANGUAGES, LISTEN_HOST, LOOPBACK, Settings
+from relay.settings import APP_NAME, LANGUAGES, LISTEN_HOST, LOOPBACK, PROJECT, Settings
 from relay.session_details import ParticipantDetails
 from relay.presence import ConnectedUsers
 from relay.prompts import prompt_catalog
@@ -1180,6 +1181,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._check_managed_local()
                 language = payload.get('language')
                 self._json(self.room.managed.create(payload, language if language in LANGUAGES else 'en'), 202)
+            elif self.path == '/api/managed/models':
+                self._check_managed_local()
+                self._json(self.room.managed.options.get(payload.get('role'), refresh=payload.get('refresh') is True))
+            elif self.path == '/api/managed/folders':
+                self._check_managed_local()
+                self._json(managed_folders(payload.get('path'), PROJECT))
             elif self.path == '/api/managed/auth':
                 self._check_managed_local()
                 self._json(self.room.managed.login(payload.get('id'), payload.get('channel_id')), 202)

@@ -28,6 +28,10 @@ let roomRequest = 0;
 let setupRequest = 0;
 let setupAgent = null;
 let joinContext = null;
+let joinModels = [];
+let joinCatalogRequest = 0;
+let joinFolderRequest = 0;
+let joinFolder = null;
 let iconDraft = null;
 let iconSaving = false;
 const participantIconLabels = {
@@ -91,18 +95,22 @@ function participantAvatar(agent, previewUrl = "") {
   return node;
 }
 
-function modelSettings(agent) {
-  const settings = agent.model_settings || {};
+function effortLabel(effort) {
   const effortKeys = {
     none: "reasoningNone", minimal: "reasoningMinimal", low: "reasoningLow", medium: "reasoningMedium",
     high: "reasoningHigh", xhigh: "reasoningXhigh", max: "reasoningMax", ultra: "reasoningUltra",
   };
+  return Object.hasOwn(effortKeys, effort) ? t(effortKeys[effort]) : effort;
+}
+
+function modelSettings(agent) {
+  const settings = agent.model_settings || {};
   const effort = settings.reasoning_effort;
   const fields = element("span", "agent-model-info");
   if (!agent.managed) fields.title = t("modelSettingsHint");
   const rows = [
     [t("model"), settings.model || t(agent.managed ? "managedModelDefault" : "modelUnknown")],
-    [t("reasoningEffort"), effort ? (effortKeys[effort] ? t(effortKeys[effort]) : effort) : t("modelUnknown")],
+    [t("reasoningEffort"), effort ? effortLabel(effort) : t(agent.managed ? "managedModelDefault" : "modelUnknown")],
   ];
   if (agent.managed) {
     const format = new Intl.NumberFormat(document.documentElement.lang);
@@ -1029,24 +1037,160 @@ el("roster").addEventListener("click", async (event) => {
   }
 });
 
+function showJoinEfforts() {
+  const model = joinModels.find(({ id }) => id === el("join-model").value);
+  const select = el("join-effort");
+  const options = (model?.efforts || []).map((effort) => {
+    const name = effortLabel(effort);
+    return new Option(effort === model.default_effort ? t("managedDefaultChoice", { name }) : name, effort);
+  });
+  if (!model?.default_effort) options.unshift(new Option(t("managedEffortDefault"), ""));
+  select.replaceChildren(...options);
+  select.disabled = !model?.efforts.length;
+  select.value = model?.default_effort || "";
+}
+
+async function loadJoinModels(refresh = false) {
+  const context = joinContext;
+  const requestId = ++joinCatalogRequest;
+  const model = el("join-model");
+  const submit = el("join-submit");
+  const status = el("join-model-status");
+  const retry = el("join-model-retry");
+  const previous = model.value;
+  const previousEffort = el("join-effort").value;
+  joinModels = [];
+  model.disabled = submit.disabled = true;
+  model.replaceChildren(new Option(t("loading"), ""));
+  showJoinEfforts();
+  el("join-catalog-status").hidden = false;
+  status.textContent = t("managedLoadingModels");
+  retry.hidden = true;
+  try {
+    const catalog = await request("/api/managed/models", { role: context.role, refresh });
+    if (joinContext !== context || requestId !== joinCatalogRequest || !joinDialog.open) return;
+    joinModels = catalog.models;
+    const defaultModel = joinModels.find(({ default_model }) => default_model);
+    const options = joinModels.map(({ id, name, default_model }) =>
+      new Option(default_model ? t("managedDefaultChoice", { name }) : name, id));
+    if (!options.length) options.push(new Option(t("managedModelDefault"), ""));
+    model.replaceChildren(...options);
+    model.value = refresh && joinModels.some(({ id }) => id === previous)
+      ? previous : defaultModel?.id ?? joinModels[0]?.id ?? "";
+    showJoinEfforts();
+    if (refresh && model.value === previous && [...el("join-effort").options].some(({ value }) => value === previousEffort)) {
+      el("join-effort").value = previousEffort;
+    }
+    model.disabled = !catalog.available;
+    submit.disabled = false;
+    status.textContent = catalog.available ? "" : t("managedModelUnavailable");
+    retry.hidden = catalog.available;
+    el("join-catalog-status").hidden = catalog.available;
+  } catch (error) {
+    if (joinContext !== context || requestId !== joinCatalogRequest || !joinDialog.open) return;
+    model.replaceChildren(new Option(t("managedModelDefault"), ""));
+    status.textContent = error.message;
+    retry.hidden = false;
+  }
+}
+
+function closeFolderPicker() {
+  ++joinFolderRequest;
+  joinFolder = null;
+  el("join-browser").hidden = true;
+  el("join-browse").setAttribute("aria-expanded", "false");
+}
+
+function renderFolderPicker(browse) {
+  const roots = el("join-folder-roots");
+  roots.replaceChildren(new Option(t("managedLocations"), ""), ...browse.roots.map(({ label, path }) =>
+    new Option(label ? t(label) : path, path)));
+  el("join-folder-location").textContent = browse.path;
+  el("join-folder-up").disabled = !browse.parent;
+  el("join-folder-select").disabled = false;
+  const list = el("join-folder-list");
+  list.replaceChildren(...browse.folders.map(({ name, path }) => {
+    const item = element("li");
+    const button = element("button", "button agent-folder-item");
+    button.type = "button";
+    button.append(icon("folder"), element("span", "", name));
+    button.addEventListener("click", () => loadFolderPicker(path, { focus: true }));
+    item.append(button);
+    return item;
+  }));
+  list.scrollTop = 0;
+  el("join-folder-status").textContent = browse.folders.length ? "" : t("managedNoFolders");
+}
+
+async function loadFolderPicker(path, { initial = false, focus = false } = {}) {
+  const requestId = ++joinFolderRequest;
+  el("join-folder-select").disabled = true;
+  el("join-folder-status").textContent = t("loading");
+  try {
+    let browse;
+    try {
+      browse = await request("/api/managed/folders", { path });
+    } catch (error) {
+      if (!initial || !path || ![400, 403].includes(error.status) || requestId !== joinFolderRequest) throw error;
+      browse = await request("/api/managed/folders", { path: "" });
+    }
+    if (requestId !== joinFolderRequest || !joinDialog.open) return;
+    joinFolder = browse;
+    renderFolderPicker(browse);
+    if (focus) (el("join-folder-list").querySelector("button") || el("join-folder-select")).focus();
+  } catch (error) {
+    if (requestId !== joinFolderRequest || !joinDialog.open) return;
+    el("join-folder-status").textContent = error.message;
+    el("join-folder-select").disabled = !joinFolder;
+  }
+}
+
+el("join-model").addEventListener("change", showJoinEfforts);
+el("join-model-retry").addEventListener("click", () => loadJoinModels(true));
+el("join-browse").addEventListener("click", () => {
+  if (!el("join-browser").hidden) {
+    closeFolderPicker();
+    return;
+  }
+  el("join-browser").hidden = false;
+  el("join-browse").setAttribute("aria-expanded", "true");
+  el("join-folder-location").textContent = "";
+  el("join-folder-up").disabled = true;
+  el("join-folder-list").replaceChildren();
+  el("join-folder-roots").replaceChildren();
+  loadFolderPicker(el("join-cwd").value.trim(), { initial: true });
+});
+el("join-folder-up").addEventListener("click", () => {
+  if (joinFolder?.parent) loadFolderPicker(joinFolder.parent);
+});
+el("join-folder-roots").addEventListener("change", (event) => {
+  if (event.target.value) loadFolderPicker(event.target.value);
+});
+el("join-folder-select").addEventListener("click", () => {
+  if (!joinFolder) return;
+  el("join-cwd").value = joinFolder.path;
+  closeFolderPicker();
+  el("join-browse").focus();
+});
+
 function openAgentCreation(role, parent) {
   el("join-form").reset();
+  closeFolderPicker();
   joinContext = { role, parent_id: parent?.id ?? null, channel_id: activeChannel };
   el("join-title").textContent = t(parent ? (role === "codex" ? "managedCodexChild" : "managedClaudeChild") : "managedCreateParent");
   el("join-cwd").value = parent?.cwd || "";
-  const models = role === "codex" ? ["gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex"] : ["sonnet", "opus", "haiku"];
-  el("join-models").replaceChildren(...models.map((model) => new Option(model, model)));
-  const efforts = [["low", "reasoningLow"], ["medium", "reasoningMedium"], ["high", "reasoningHigh"], ["xhigh", "reasoningXhigh"]];
-  if (role === "claude") efforts.push(["max", "reasoningMax"]);
-  el("join-effort").replaceChildren(...efforts.map(([value, label]) => new Option(t(label), value)));
-  el("join-effort").value = "medium";
-  el("join-submit").disabled = false;
   showMessage("join-error", "");
   joinDialog.showModal();
   el("join-name").focus();
+  loadJoinModels();
 }
 el("add-agent").addEventListener("click", () => openAgentCreation("codex"));
-joinDialog.addEventListener("close", () => { if (!joinDialog.open) joinContext = null; });
+joinDialog.addEventListener("close", () => {
+  if (!joinDialog.open) {
+    joinContext = null;
+    closeFolderPicker();
+  }
+});
 
 el("join-form").addEventListener("submit", async (event) => {
   event.preventDefault();

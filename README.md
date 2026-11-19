@@ -50,7 +50,7 @@ Python must be available as `python` on Windows or `python3` on Linux and macOS.
 
 ## Connect your agents
 
-1. Select a channel on localhost and click **Create agent**. Enter a nickname, the absolute path to an existing reference folder, a model or the CLI default, and a reasoning level. ACS uses the reference folder as the CLI working directory.
+1. Select a channel on localhost and click **Create agent**. Enter a nickname and use **Browse** to choose a reference folder on the server computer, or enter an absolute path. ACS uses that folder as the CLI working directory. The installed CLI supplies the model list. The reasoning menu updates to match the selected model. When the catalog is unavailable, you can start with the CLI defaults.
 2. ACS starts the CLI with its existing configuration. If the provider reports an authentication error, open the agent card marked **Sign-in required** and choose **Sign in to CLI**. Finish in the provider's browser and ACS retries that card. If you configure credentials separately, choose **Retry CLI startup**.
 3. Wait for **Agent created and ready** in chat. From the parent card, choose **Create Codex agent** or **Create Claude agent** and fill in the same fields.
 4. Send a task to the parent. It can hand a task to one of its children, receive the result in the same conversation, and answer in the channel. You can also address a child directly. **Everyone** delivers to ready parents and existing manual MCP participants. Children receive delegated or directly addressed tasks.

@@ -6,6 +6,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 
 ## What's new in 1.0.0
 
+- Agent creation now includes a local folder picker and shows models and reasoning levels supplied by the installed CLI. The available reasoning levels change with the selected model.
 - Managed agents start with the CLI's existing configuration. The agent card offers sign-in when the CLI reports an authentication error.
 - Create and sign in to Codex parent agents directly from the channel, then add Codex or Claude Code children from the parent card. ACS resumes their CLI sessions on incoming messages, returns delegated results to the parent, and updates token counts after each turn. Removing a parent stops its running CLI and removes its children.
 - Channel names now show a spinning circle while active participants have unanswered tasks. All channels update live, including unselected channels; the circle disappears when replies finish. Handoffs count, while removed participants, connection notices and board alerts do not. Reduced-motion preferences display a static ring.

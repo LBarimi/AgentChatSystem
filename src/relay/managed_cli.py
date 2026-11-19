@@ -77,8 +77,9 @@ def command(program, agent, schema=None):
         if session:
             args.append('resume')
         args += ['--json', '--skip-git-repo-check', '-c', 'approval_policy="never"',
-                 '-c', 'sandbox_mode="workspace-write"', '-c',
-                 'model_reasoning_effort=' + json.dumps(agent['effort'])]
+                 '-c', 'sandbox_mode="workspace-write"']
+        if agent['effort']:
+            args += ['-c', 'model_reasoning_effort=' + json.dumps(agent['effort'])]
         if model:
             args += ['--model', model]
         if schema:
@@ -86,8 +87,9 @@ def command(program, agent, schema=None):
         if session:
             args.append(session)
         return args + ['-']
-    args = [program, '--print', '--output-format', 'json',
-            '--permission-mode', 'default', '--effort', agent['effort']]
+    args = [program, '--print', '--output-format', 'json', '--permission-mode', 'default']
+    if agent['effort']:
+        args += ['--effort', agent['effort']]
     if model:
         args += ['--model', model]
     if session:
@@ -141,15 +143,16 @@ def tokens(role, usage):
 
 
 class Turn:
-    def __init__(self, args, cwd):
-        self.output = TemporaryFile()
+    def __init__(self, args, cwd, *, stream=False):
+        self.output = None if stream else TemporaryFile()
         self.error_output = None
         self.guard = None
         try:
             self.error_output = TemporaryFile()
             self.guard = WindowsJob() if os.name == 'nt' else None
             self.process = subprocess.Popen(
-                args, cwd=Path(cwd) if cwd else None, stdin=subprocess.PIPE, stdout=self.output,
+                args, cwd=Path(cwd) if cwd else None, stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE if stream else self.output,
                 stderr=self.error_output, encoding='utf-8', errors='replace',
                 start_new_session=os.name != 'nt',
                 creationflags=(subprocess.CREATE_NO_WINDOW | 0x04) if self.guard else 0,  # CREATE_SUSPENDED
@@ -166,7 +169,8 @@ class Turn:
                 self.guard.close()
             if self.error_output:
                 self.error_output.close()
-            self.output.close()
+            if self.output:
+                self.output.close()
             raise
         self.stopped = False
 
@@ -204,7 +208,10 @@ class Turn:
             self.process.wait(timeout=2)
         finally:
             self.process.stdin.close()
-            self.output.close()
+            if self.process.stdout:
+                self.process.stdout.close()
+            if self.output:
+                self.output.close()
             self.error_output.close()
 
 
