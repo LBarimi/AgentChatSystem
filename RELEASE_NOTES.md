@@ -6,6 +6,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 
 ## What's new in 1.0.0
 
+- Strengthened the listening prompt in all seven languages: do not voluntarily stop without an explicit user stop request, impose no waiting or retry cap, and call receive again after timeouts or completed work. Explicit stop requests and agent removal still end listening; unavailable tools or enforced execution limits must be reported accurately.
 - Channel folders now show shared/ and logs/ links that open a separate download page. Browse nested folders with breadcrumb links, parent navigation, and browser history; copy the page URL to share a folder on the same LAN. Folders appear first, with aligned names, sizes, and download actions. Server storage settings remain in the original dialog.
 - Completed localization of setup, listening, and manual MCP guidance, including the embedded verification script’s messages. Language changes refresh open prompt content without discarding nickname or icon edits. Copy buttons stay disabled while loading, with a retry action on failure. CLI configuration headings follow the saved language or config --language.
 - Connected users mark your computer name with (You) in yellow. Human chat messages show the sender’s computer name or IP; your own messages have yellow accents. Sender details are saved with new messages. Older messages without sender details remain labeled User.
