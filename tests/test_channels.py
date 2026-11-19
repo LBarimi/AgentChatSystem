@@ -73,29 +73,81 @@ class ChannelManagement(unittest.TestCase):
             self.room.snapshot(channel['id'])
         self.assertEqual(error.exception.status, 404)
 
-    def test_default_channel_cannot_be_deleted(self):
-        self.post('general')
-        with self.assertRaises(RequestError) as error:
-            self.room.delete_channel('general')
-        self.assertEqual(error.exception.key, 'errorDefaultChannelDelete')
-        self.assertEqual(self.room.snapshot('general')['total_messages'], 1)
+    def test_default_channel_deletion_survives_restart_without_removing_participants(self):
+        self.assertEqual([channel['id'] for channel in self.room.channels()], ['general'])
+        channel = self.room.snapshot('general')['channel']
+        shared = Path(channel['shared']) / 'keep.txt'
+        shared.write_text('Keep this file.', encoding='utf-8')
+        participants = self.room.participants()
+        self.post('general', attachments=[{'name': 'task.txt', 'data': b64encode(b'task').decode()}])
+        self.assertEqual(self.room.delete_channel('general')['cleared'], 1)
+        self.assertEqual(self.room.channels(), [])
+        self.assertEqual(self.room.db.execute('SELECT COUNT(*) FROM deliveries').fetchone()[0], 0)
+        self.assertEqual(self.room.db.execute('SELECT COUNT(*) FROM chat_attachments').fetchone()[0], 0)
+        self.assertEqual(shared.read_text(encoding='utf-8'), 'Keep this file.')
+        self.assertEqual((Path(channel['logs']) / 'chat.jsonl').read_bytes(), b'')
+        for _ in range(2):
+            self.room.db.close()
+            self.room = Room(self.root / 'room.sqlite3')
+            self.assertEqual(self.room.channels(), [])
+            self.assertEqual(self.room.participants(), participants)
+            snapshot = self.room.snapshot(None)
+            self.assertIsNone(snapshot['channel'])
+            for key in ('participants', 'archived_participants', 'messages'):
+                self.assertEqual(snapshot[key], [])
+            self.assertEqual(snapshot['total_messages'], 0)
+            with self.assertRaises(RequestError) as error:
+                self.post('general')
+            self.assertEqual(error.exception.status, 404)
+        replacement = self.room.create_channel({'name': 'New workspace'})
+        self.post(replacement['id'])
+        self.assertEqual(self.room.snapshot(replacement['id'])['total_messages'], 1)
+        self.assertEqual(len(self.room.snapshot(replacement['id'])['participants']), len(participants))
+
+    def test_default_deletion_preserves_other_channels_and_board(self):
+        other = self.room.create_channel({'name': 'Keep me'})
+        message = self.post(other['id'])
+        self.room.publish_board_post({'request_id': str(uuid4()), 'title': 'Instructions', 'body': 'Keep me'})
+        self.room.delete_channel('general')
+        self.room.db.close()
+        self.room = Room(self.root / 'room.sqlite3')
+        empty = self.room.snapshot(None)
+        self.assertIsNone(empty['channel'])
+        self.assertEqual([channel['id'] for channel in empty['channels']], [other['id']])
+        self.assertEqual(empty['messages'], [])
+        self.assertEqual(self.room.snapshot(other['id'])['messages'][0]['id'], message['id'])
+        self.assertEqual(self.room.wait_message('claude', 0)['state'], 'board_post')
+
+    def test_existing_database_gets_initialization_marker_without_resetting_channels(self):
+        self.room.rename_channel({'channel_id': 'general', 'name': 'My workspace'})
+        other = self.room.create_channel({'name': 'Existing channel'})
+        with self.room.db:
+            self.room.db.execute('DROP TABLE workspace_state')
+        self.room.db.close()
+        self.room = Room(self.root / 'room.sqlite3')
+        self.assertEqual(self.room.snapshot('general')['channel']['name'], 'My workspace')
+        self.assertEqual(len(self.room.channels()), 2)
+        self.room.delete_channel('general')
+        self.room.db.close()
+        self.room = Room(self.root / 'room.sqlite3')
+        self.assertEqual([channel['id'] for channel in self.room.channels()], [other['id']])
 
     def test_deletion_wakes_a_scoped_receiver(self):
-        channel = self.room.create_channel({'name': 'Waiting'})
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            pending = pool.submit(self.room.wait_message, 'codex', 3, channel['id'])
-            deadline = monotonic() + 2
-            while monotonic() < deadline:
-                with self.room.changed:
-                    if 'codex' in self.room.waiters:
-                        break
-                sleep(0.01)
-            self.assertIn('codex', self.room.waiters)
-            self.room.delete_channel(channel['id'])
-            with self.assertRaises(RequestError) as error:
-                pending.result(timeout=1)
-            self.assertEqual(error.exception.status, 404)
-        self.assertNotIn('codex', self.room.waiters)
+        for channel_id in ('general', self.room.create_channel({'name': 'Waiting'})['id']):
+            with self.subTest(channel=channel_id), ThreadPoolExecutor(max_workers=1) as pool:
+                pending = pool.submit(self.room.wait_message, 'codex', 3, channel_id)
+                deadline = monotonic() + 2
+                while monotonic() < deadline:
+                    with self.room.changed:
+                        if 'codex' in self.room.waiters:
+                            break
+                    sleep(0.01)
+                self.assertIn('codex', self.room.waiters)
+                self.room.delete_channel(channel_id)
+                with self.assertRaises(RequestError) as error:
+                    pending.result(timeout=1)
+                self.assertEqual(error.exception.status, 404)
+            self.assertNotIn('codex', self.room.waiters)
 
 
 class LocalSettings(unittest.TestCase):

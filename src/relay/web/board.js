@@ -24,10 +24,7 @@ function showBoardHeading() {
 function showBoard(open) {
   boardOpen = open;
   boardView.hidden = !open;
-  scrollRegion.hidden = open;
-  el("composer").parentElement.hidden = open;
-  el("show-folders").hidden = open;
-  el("clear-chat").hidden = open;
+  showChannelView();
   const toggle = el("board-toggle");
   toggle.setAttribute("aria-pressed", String(open));
   if (open) {

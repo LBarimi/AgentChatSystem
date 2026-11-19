@@ -82,7 +82,10 @@ class Room:
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL
             );
-            INSERT OR IGNORE INTO channels(id,name) VALUES ('general', '작업실');
+            CREATE TABLE IF NOT EXISTS workspace_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS deliveries (
                 message_id INTEGER NOT NULL REFERENCES messages(id),
                 agent_id TEXT NOT NULL REFERENCES participants(id),
@@ -119,6 +122,12 @@ class Room:
                 self.db.execute('ALTER TABLE channels ADD COLUMN folder TEXT')
             if 'name_customized' not in channel_columns:
                 self.db.execute('ALTER TABLE channels ADD COLUMN name_customized INTEGER NOT NULL DEFAULT 0')
+            # Seed once, including on upgrade; an intentionally empty workspace stays empty.
+            initialized = self.db.execute(
+                "INSERT OR IGNORE INTO workspace_state(key,value) VALUES ('channels_initialized','1')"
+            ).rowcount
+            if initialized:
+                self.db.execute("INSERT OR IGNORE INTO channels(id,name) VALUES ('general','작업실')")
             self.db.execute('DROP INDEX IF EXISTS one_reply')
             self.db.execute('DROP INDEX IF EXISTS inbox')
             self.db.execute('CREATE INDEX IF NOT EXISTS channel_messages ON messages(channel_id,id)')
@@ -271,8 +280,6 @@ class Room:
         with self.folder_lock:
             with self.changed:
                 channel = self._channel(channel_id)
-                if channel_id == DEFAULT_CHANNEL:
-                    raise RequestError('기본 채널은 삭제할 수 없습니다.', 409, key='errorDefaultChannelDelete')
                 target = self.storage.log_path(Path(channel['folder']))
                 with self.db:
                     count = self._delete_channel_messages(channel_id)
@@ -490,7 +497,7 @@ class Room:
 
     def snapshot(self, channel_id, *, viewer_address=None):
         with self.changed:
-            channel = self._channel(channel_id)
+            channel = self._channel(channel_id) if channel_id is not None else None
             rows = self.db.execute(
                 f'SELECT {MESSAGE_FIELDS} FROM messages m WHERE channel_id=? ORDER BY id DESC LIMIT 100', (channel_id,)
             ).fetchall()
@@ -499,7 +506,7 @@ class Room:
                 "board_revision": str(self.board_revision),
                 "channel": channel,
                 "channels": self.channels(),
-                "participants": self.participants(channel_id),
+                "participants": self.participants(channel_id) if channel else [],
                 "users": self.users.snapshot(),
                 "viewer": self.users.identity(viewer_address),
                 "archived_participants": self._archived_participants(rows),
@@ -832,7 +839,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             self._check_local()
             url = urlsplit(self.path)
-            params = parse_qs(url.query)
+            params = parse_qs(url.query, keep_blank_values=url.path == '/api/room')
             channel_id = params.get('channel', [None])[0]
             if url.path == '/upload-policy.js':
                 code = 'const uploadPolicy = Object.freeze(' + json.dumps(upload_policy()) + ');'
@@ -846,7 +853,8 @@ class Handler(BaseHTTPRequestHandler):
                             "mcp_version": MCP_VERSION, "receive_seconds": DEFAULT_WAIT_SECONDS,
                             "png_reply": True, "legacy_png_reply": True})
             elif url.path == "/api/room":
-                self._json(self.room.snapshot(channel_id or DEFAULT_CHANNEL, viewer_address=self.client_address[0]))
+                selected = params.get('channel', [DEFAULT_CHANNEL])[0] or None
+                self._json(self.room.snapshot(selected, viewer_address=self.client_address[0]))
             elif url.path == "/api/events":
                 self._events()
             elif url.path == '/api/settings':

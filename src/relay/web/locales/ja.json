@@ -195,7 +195,6 @@
   "renameChannel": "チャンネル名を変更",
   "deleteChannel": "チャンネルを削除",
   "deleteChannelConfirm": "このチャンネル、会話、添付ファイル、チャットログ、未処理のメッセージを削除します。共有フォルダー内のファイルは保持されます。この操作は取り消せません。",
-  "errorDefaultChannelDelete": "既定のチャンネルは削除できません。",
   "resizeChannels": "チャンネルパネルの幅を変更",
   "resizeParticipants": "参加者パネルの幅を変更",
   "resizePanelHint": "ドラッグまたは矢印キーで幅を変更します。ダブルクリックで元の幅に戻します。",
@@ -264,5 +263,7 @@
   "fileSize": "サイズ",
   "filePagination": "ファイル一覧のページ",
   "agentDisconnected": "(接続切れ)",
-  "agentDisconnectedHint": "現在このチャンネルでメッセージの受信を待機していません。"
+  "agentDisconnectedHint": "現在このチャンネルでメッセージの受信を待機していません。",
+  "noChannelSelected": "チャンネルが選択されていません",
+  "chooseChannelHint": "左側でチャンネルを選択するか、新しいチャンネルを作成して会話を始めてください。"
 }

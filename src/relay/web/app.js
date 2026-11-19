@@ -18,7 +18,7 @@ const channelDialog = el("channel-dialog");
 const foldersDialog = el("folders-dialog");
 const drafts = new Map();
 const defaultChannel = "general";
-let activeChannel = localStorage.getItem("relay-channel") || defaultChannel;
+let activeChannel = localStorage.getItem("relay-channel") ?? defaultChannel;
 let current = null;
 let live = false;
 let sending = false;
@@ -116,14 +116,32 @@ function showMessage(id, message) {
 
 function refreshControls() {
   const ready = live && current;
-  el("add-agent").disabled = !ready;
+  const hasChannel = Boolean(current?.channel);
+  el("add-agent").disabled = !ready || !hasChannel;
   el("add-channel").disabled = !ready;
-  el("show-folders").disabled = !current;
-  el("clear-chat").disabled = !ready || current.total_messages === 0;
+  el("empty-add-channel").disabled = !ready;
+  el("show-folders").disabled = !hasChannel;
+  el("clear-chat").disabled = !ready || !hasChannel || current.total_messages === 0;
   for (const button of document.querySelectorAll(".channel-more")) button.disabled = !ready;
-  recipient.disabled = !current;
-  el("chat-attach").disabled = sending || !current;
-  send.disabled = sending || !ready || !recipientChoice.available(current.participants) || (!input.value.trim() && !chatFiles.length);
+  recipient.disabled = !hasChannel;
+  el("chat-attach").disabled = sending || !hasChannel;
+  send.disabled = sending || !ready || !hasChannel || !recipientChoice.available(current.participants) || (!input.value.trim() && !chatFiles.length);
+}
+
+function showChannelView() {
+  const hasChannel = Boolean(activeChannel);
+  const shell = document.querySelector(".app-shell");
+  const layoutChanged = shell.classList.contains("no-channel") === hasChannel;
+  shell.classList.toggle("no-channel", !hasChannel);
+  el("agents-panel").hidden = !hasChannel;
+  el("roster-toggle").hidden = !hasChannel;
+  scrollRegion.hidden = boardOpen || !hasChannel;
+  el("composer").parentElement.hidden = boardOpen || !hasChannel;
+  el("no-channel").hidden = boardOpen || hasChannel;
+  el("show-folders").hidden = boardOpen || !hasChannel;
+  el("clear-chat").hidden = boardOpen || !hasChannel;
+  if (!hasChannel && el("agents-panel").classList.contains("open")) showSidePanel("agents", false);
+  if (layoutChanged) window.dispatchEvent(new Event("resize"));
 }
 
 function showChannels() {
@@ -154,18 +172,18 @@ function channelName(channel) {
 }
 
 function showChatHeading() {
-  const name = current ? channelName(current.channel) : t("channel");
+  const name = current?.channel ? channelName(current.channel) : t(activeChannel ? "channel" : "noChannelSelected");
   el("chat-title").textContent = name;
   document.title = appName + " — " + name;
   const pending = current?.participants.reduce((total, agent) => total + agent.pending, 0) || 0;
-  el("room-state").textContent = current
+  el("room-state").textContent = !activeChannel ? "" : current?.channel
     ? [t("messageCount", { count: current.total_messages }), pending && t("pendingCount", { count: pending })].filter(Boolean).join(" · ")
     : t("loading");
 }
 
 const clearChatDialog = el("clear-chat-dialog");
 el("clear-chat").addEventListener("click", () => {
-  if (!current) return;
+  if (!current?.channel) return;
   clearChatDialog.dataset.channel = current.channel.id;
   el("clear-chat-name").textContent = channelName(current.channel);
   showMessage("clear-chat-error", "");
@@ -342,6 +360,7 @@ function applyRoom(snapshot, repaint = false) {
   const count = snapshot.total_messages;
   if (boardOpen && boardChanged) loadBoard();
   if (!boardOpen) showChatHeading();
+  showChannelView();
   refreshControls();
 
   const key = snapshot.messages.map((message) => message.id).join(",");
@@ -372,8 +391,8 @@ async function loadRoom() {
     if (requestId === roomRequest) applyRoom(snapshot);
   } catch (error) {
     if (requestId !== roomRequest) return;
-    if (error.status === 404 && requestedChannel !== defaultChannel) {
-      switchChannel(defaultChannel);
+    if (error.status === 404 && requestedChannel) {
+      switchChannel("");
       drafts.delete(requestedChannel);
     } else {
       showMessage("form-error", error.message);
@@ -384,7 +403,7 @@ async function loadRoom() {
 function switchChannel(channelId) {
   if (channelId === activeChannel) return;
   closeChannelMenu();
-  drafts.set(activeChannel, { body: input.value, files: chatFiles, requestId: chatDraftId });
+  if (activeChannel) drafts.set(activeChannel, { body: input.value, files: chatFiles, requestId: chatDraftId });
   activeChannel = channelId;
   localStorage.setItem("relay-channel", channelId);
   current = null;
@@ -400,10 +419,16 @@ function switchChannel(channelId) {
   scrollRegion.scrollTop = 0;
   el("empty").hidden = true;
   el("history-limit").hidden = true;
-  el("chat-title").textContent = el("channel-list").querySelector('[data-channel="' + CSS.escape(channelId) + '"] span')?.textContent || t("channel");
-  el("room-state").textContent = t("loading");
+  el("chat-title").textContent = el("channel-list").querySelector('[data-channel="' + CSS.escape(channelId) + '"] span')?.textContent || t(channelId ? "channel" : "noChannelSelected");
+  el("room-state").textContent = channelId ? t("loading") : "";
   showMessage("form-error", "");
   showSidePanel("channels", false);
+  showChannelView();
+  if (!channelId) {
+    setupRequest++;
+    for (const dialog of [clearChatDialog, foldersDialog, setupDialog, joinDialog, agentDeleteDialog, channelDeleteDialog]) dialog.close();
+    if (channelDialog.dataset.channel) channelDialog.close();
+  }
   refreshControls();
   loadRoom();
 }
@@ -528,8 +553,6 @@ function openChannelMenu(button) {
   channelMenuButton = button;
   channelMenu.dataset.channel = channel.id;
   channelMenu.setAttribute("aria-label", t("channelActions", { name: channelName(channel) }));
-  el("channel-delete").disabled = channel.id === defaultChannel;
-  el("channel-protected").hidden = channel.id !== defaultChannel;
   button.setAttribute("aria-expanded", "true");
   channelMenu.hidden = false;
   const bounds = button.getBoundingClientRect();
@@ -589,6 +612,7 @@ function editChannel(channel = null) {
   el("channel-name").select();
 }
 el("add-channel").addEventListener("click", () => editChannel());
+el("empty-add-channel").addEventListener("click", () => editChannel());
 el("channel-rename").addEventListener("click", () => {
   const channel = current?.channels.find(({ id }) => id === channelMenu.dataset.channel);
   closeChannelMenu(true);
@@ -597,7 +621,7 @@ el("channel-rename").addEventListener("click", () => {
 el("channel-delete").addEventListener("click", () => {
   const channel = current?.channels.find(({ id }) => id === channelMenu.dataset.channel);
   closeChannelMenu(true);
-  if (!channel || channel.id === defaultChannel) return;
+  if (!channel) return;
   channelDeleteDialog.dataset.channel = channel.id;
   el("channel-delete-name").textContent = channelName(channel);
   showMessage("channel-delete-error", "");
@@ -613,7 +637,7 @@ el("channel-delete-form").addEventListener("submit", async (event) => {
   try {
     await request("/api/channels/delete", { channel_id: channelId });
     channelDeleteDialog.close();
-    if (activeChannel === channelId) switchChannel(defaultChannel);
+    if (activeChannel === channelId) switchChannel("");
     else loadRoom();
     drafts.delete(channelId);
     el("add-channel").focus({ preventScroll: true });
@@ -661,7 +685,7 @@ function showFolderPaths(channel) {
 }
 
 el("show-folders").addEventListener("click", () => {
-  if (!current) return;
+  if (!current?.channel) return;
   el("folder-form").reset();
   showFolderPaths(current.channel);
   showMessage("folder-error", "");
@@ -1021,9 +1045,9 @@ for (const [name, toggle] of Object.entries(sidePanels)) {
     const budget = shell.clientWidth - 360;
     let left = clamp(preferred.channels ?? normal.channels, ...limits.channels);
     let right = clamp(preferred.agents ?? normal.agents, ...limits.agents);
-    right = Math.max(limits.agents[0], Math.min(right, budget - left));
-    left = Math.max(limits.channels[0], Math.min(left, budget - right));
-    for (const [name, width, otherWidth] of [["channels", left, right], ["agents", right, left]]) {
+    if (activeChannel) right = Math.max(limits.agents[0], Math.min(right, budget - left));
+    left = Math.max(limits.channels[0], Math.min(left, budget - (activeChannel ? right : 0)));
+    for (const [name, width, otherWidth] of [["channels", left, activeChannel ? right : 0], ["agents", right, left]]) {
       shell.style.setProperty(`--${name}-width`, width + "px");
       el(name + "-resizer").setAttribute("aria-valuenow", Math.round(width));
       el(name + "-resizer").setAttribute("aria-valuemax", Math.floor(Math.min(limits[name][1], budget - otherWidth)));

@@ -195,7 +195,6 @@
   "renameChannel": "Rename channel",
   "deleteChannel": "Delete channel",
   "deleteChannelConfirm": "Delete this channel, its conversation, attachments, chat log, and pending messages. Files in the shared folder are kept. This cannot be undone.",
-  "errorDefaultChannelDelete": "The default channel cannot be deleted.",
   "resizeChannels": "Resize channels panel",
   "resizeParticipants": "Resize participants panel",
   "resizePanelHint": "Drag or use the arrow keys to resize. Double-click to reset.",
@@ -264,5 +263,7 @@
   "fileSize": "Size",
   "filePagination": "File pages",
   "agentDisconnected": "(Disconnected)",
-  "agentDisconnectedHint": "Not currently listening for messages in this channel."
+  "agentDisconnectedHint": "Not currently listening for messages in this channel.",
+  "noChannelSelected": "No channel selected",
+  "chooseChannelHint": "Select a channel on the left or create one to start a conversation."
 }

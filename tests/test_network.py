@@ -65,6 +65,31 @@ class NetworkAccess(unittest.TestCase):
         self.assertEqual(health['service'], 'AgentChatSystem')
         self.assertEqual(self.server.server_address[0], '0.0.0.0')
 
+    def test_default_channel_delete_and_empty_workspace_api(self):
+        host = f'127.0.0.1:{self.port}'
+        status, initial = self.call('/api/room', host=host)
+        self.assertEqual(status, 200)
+        self.assertEqual(initial['channel']['id'], 'general')
+        status, deleted = self.call('/api/channels/delete', host=host, payload={'channel_id': 'general'})
+        self.assertEqual(status, 200)
+        self.assertTrue(deleted['deleted'])
+        for route in ('/api/room', '/api/room?channel=general', '/api/room?channel=missing'):
+            self.assertEqual(self.call(route, host=host)[0], 404)
+        status, empty = self.call('/api/room?channel=', host=host)
+        self.assertEqual(status, 200)
+        self.assertIsNone(empty['channel'])
+        for key in ('channels', 'participants', 'archived_participants', 'messages'):
+            self.assertEqual(empty[key], [])
+        status, channel = self.call('/api/channels', host=host, payload={'name': 'New channel'})
+        self.assertEqual(status, 201)
+        status, empty = self.call('/api/room?channel=', host=host)
+        self.assertEqual(status, 200)
+        self.assertIsNone(empty['channel'])
+        self.assertEqual(empty['channels'][0]['id'], channel['id'])
+        status, selected = self.call('/api/room?channel=' + channel['id'], host=host)
+        self.assertEqual(status, 200)
+        self.assertEqual(len(selected['participants']), len(initial['participants']))
+
     def test_legacy_resume_settings_do_not_block_manual_mcp_delivery(self):
         root = Path(self.temporary.name)
         with self.server.room.db as db:

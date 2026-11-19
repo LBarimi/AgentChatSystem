@@ -195,7 +195,6 @@
   "renameChannel": "重命名频道",
   "deleteChannel": "删除频道",
   "deleteChannelConfirm": "删除此频道、对话、附件、聊天日志和待处理消息。共享文件夹中的文件将保留。此操作无法撤销。",
-  "errorDefaultChannelDelete": "无法删除默认频道。",
   "resizeChannels": "调整频道面板宽度",
   "resizeParticipants": "调整参与者面板宽度",
   "resizePanelHint": "拖动或使用方向键调整宽度。双击恢复默认宽度。",
@@ -264,5 +263,7 @@
   "fileSize": "大小",
   "filePagination": "文件列表分页",
   "agentDisconnected": "(连接断开)",
-  "agentDisconnectedHint": "当前未在此频道等待接收消息。"
+  "agentDisconnectedHint": "当前未在此频道等待接收消息。",
+  "noChannelSelected": "未选择频道",
+  "chooseChannelHint": "在左侧选择频道或创建新频道，开始对话。"
 }

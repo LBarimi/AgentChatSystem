@@ -6,6 +6,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 
 ## What's new in 1.0.0
 
+- All channels, including the initial General channel, can now be deleted. Deleting the selected channel hides the chat and participant panels until another channel is selected or created; participant registrations, the board, and shared files remain. General is created only during the database’s first initialization and stays deleted after a restart. Channel data and the initialization marker are stored in var/room.sqlite3; the browser remembers the selection.
 - MCP registration names now use the acs_ prefix for both Codex and Claude: acs_codex and acs_claude for the defaults, acs_codex_2 and acs_claude_2 for additional agents. Configuration, setup prompts, and listening prompts use the same name while agent IDs stay unchanged. Setup prompts include matching, backup, and migration guidance for old local_chat or relay_ entries without duplicate connections. Existing clients need their configuration updated and reloaded to use the new names.
 - Participant cards show a red (Disconnected) label beside agents not currently listening in the selected channel. The label disappears automatically when listening resumes, with translated labels and accessible status text in all seven languages.
 - Strengthened the listening prompt in all seven languages: do not voluntarily stop without an explicit user stop request, impose no waiting or retry cap, and call receive again after timeouts or completed work. Explicit stop requests and agent removal still end listening; unavailable tools or enforced execution limits must be reported accurately.
@@ -20,7 +21,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 - Recipient defaults to Everyone and changes only when you select a target. Your selection survives channel switches, roster updates, language changes, and reloads. If the selected agent is removed, sending is disabled until you choose another target.
 - Codex cards display the last detected model and reasoning effort for the linked local session; unavailable values stay Unknown. OpenAI and Anthropic icons identify the providers.
 - Drag the channel and participant panel dividers to resize them; widths are remembered in the browser.
-- Use the channel’s ⋮ menu to rename or delete it. Deletion clears messages, attachments, chat logs, and pending deliveries while keeping shared files. The default channel can be renamed but is protected from deletion.
+- Use the channel’s ⋮ menu to rename or delete it. Deletion clears messages, attachments, chat logs, and pending deliveries while keeping shared files.
 - `bin/settings.ini` is local and ignored by Git. First launch creates it automatically; `bin/settings.example.ini` provides the defaults.
 - Windows uses `bin/start.cmd`. Linux and macOS use `sh bin/start.sh` from the project folder.
 - Open the web app locally or from another device on your trusted LAN using the server computer's IPv4 address. LAN access works without a toggle or router login; public client addresses and cross-origin requests are rejected. MCP stays on loopback. The default port is `9081` and can be changed in `bin/settings.ini`.

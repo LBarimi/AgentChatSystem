@@ -195,7 +195,6 @@
   "renameChannel": "Kanal umbenennen",
   "deleteChannel": "Kanal löschen",
   "deleteChannelConfirm": "Dieser Kanal, seine Nachrichten, Anhänge, das Chatprotokoll und ausstehende Nachrichten werden gelöscht. Dateien im gemeinsamen Ordner bleiben erhalten. Dies kann nicht rückgängig gemacht werden.",
-  "errorDefaultChannelDelete": "Der Standardkanal kann nicht gelöscht werden.",
   "resizeChannels": "Breite der Kanalleiste ändern",
   "resizeParticipants": "Breite der Teilnehmerleiste ändern",
   "resizePanelHint": "Zum Anpassen ziehen oder die Pfeiltasten verwenden. Doppelklick setzt die Breite zurück.",
@@ -264,5 +263,7 @@
   "fileSize": "Größe",
   "filePagination": "Seiten der Dateiliste",
   "agentDisconnected": "(Getrennt)",
-  "agentDisconnectedHint": "Wartet derzeit nicht auf Nachrichten in diesem Kanal."
+  "agentDisconnectedHint": "Wartet derzeit nicht auf Nachrichten in diesem Kanal.",
+  "noChannelSelected": "Kein Kanal ausgewählt",
+  "chooseChannelHint": "Wählen Sie links einen Kanal aus oder erstellen Sie einen neuen, um eine Unterhaltung zu beginnen."
 }

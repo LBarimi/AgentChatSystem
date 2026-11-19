@@ -79,7 +79,9 @@ Participant cards show a red **(Disconnected)** label next to the nickname whene
 
 Drag the inner edge of the channels or participants panel to resize it. The browser remembers each width. You can also focus a divider and use the arrow keys, or double-click it to reset the width. Small screens keep the slide-out panels.
 
-Use the **⋮** menu beside a channel to rename or delete it. Deletion requires confirmation and removes its messages, attachments, chat log, and pending deliveries; shared files stay on disk. The default channel can be renamed but cannot be deleted because it is the default destination for MCP and terminal clients.
+Use the **⋮** menu beside any channel, including the initial **General** channel, to rename or delete it. Deletion requires confirmation and removes its messages, attachments, chat log, and pending deliveries; shared files stay on disk. Deleting the selected channel hides the chat and participant panels until you select or create another channel. Participant registrations and the board remain available. Deleted channels are not restored when the server restarts.
+
+Terminal `start` and `status` commands default to `general`; after deleting it, pass an existing channel ID with `--channel`. MCP `receive` listens across channels when `channel_id` is omitted, and replies stay in the original message’s channel.
 
 Chat, board posts, and AI replies share one attachment policy: **up to 30 files per message or post, 10 MiB (10,485,760 bytes) per file**. Supported extensions are **`.png`, `.jpg`, `.txt`, `.csv`, `.xlsx`, `.xlsm`, `.json`, `.xml`, `.pdf`, `.pptx`, `.mp4`, and `.gif`**; extension matching is case-insensitive. Other extensions, including new MD and WebP uploads, are rejected. Existing attachments remain readable.
 
@@ -134,7 +136,9 @@ LAN visitors share the chat and board; there is no separate sign-in, and HTTP tr
 
 ## Local data
 
-The workspace stores messages, attachments, board posts, and participant icons in `var/room.sqlite3`. Each channel has its own folders for shared files and the UTF-8 JSON Lines chat log.
+The workspace stores channels, messages, attachments, board posts, and participant icons in `var/room.sqlite3`. The `channels` table holds channel IDs, names, and storage locations. The `workspace_state` table records `channels_initialized`, so **General** (작업실 in Korean) is created only during the database’s first initialization. An empty channel list after deletion remains empty after restarting. Your browser stores the selected channel in local storage under `relay-channel`, including an empty selection; channel data is not stored in `bin/settings.ini`.
+
+Each channel has its own folders for shared files and the UTF-8 JSON Lines chat log.
 
 ```text
 var/channels/<channel-id>/

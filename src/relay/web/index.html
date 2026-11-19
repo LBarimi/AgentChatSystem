@@ -105,6 +105,11 @@
         <p class="composer-note" id="composer-note"><kbd>Enter</kbd><span data-i18n="send">전송</span><span>·</span><kbd>Shift</kbd><span>+</span><kbd>Enter</kbd><span data-i18n="lineBreak">줄바꿈</span></p>
         <p class="form-error" id="form-error" role="alert" hidden></p>
       </div>
+      <section class="empty no-channel-state" id="no-channel" aria-labelledby="no-channel-title" hidden>
+        <h2 id="no-channel-title" data-i18n="noChannelSelected">선택된 채널이 없습니다</h2>
+        <p data-i18n="chooseChannelHint">왼쪽에서 채널을 선택하거나 새 채널을 만들어 대화를 시작하세요.</p>
+        <button class="button primary" id="empty-add-channel" type="button" data-i18n="addChannel" disabled>채널 추가</button>
+      </section>
       <section class="board-view" id="board-view" aria-label="게시판" data-i18n-aria-label="board" hidden>
         <div class="board-content">
           <div class="board-actions">
@@ -142,7 +147,6 @@
   <div class="channel-menu" id="channel-menu" role="menu" hidden>
     <button type="button" role="menuitem" id="channel-rename" data-i18n="renameChannel">채널명 변경</button>
     <button type="button" role="menuitem" id="channel-delete" class="danger" data-i18n="deleteChannel">채널 삭제</button>
-    <p id="channel-protected" data-i18n="errorDefaultChannelDelete" hidden>기본 채널은 삭제할 수 없습니다.</p>
   </div>
   <dialog id="channel-delete-dialog" aria-labelledby="channel-delete-title">
     <form class="dialog-body" id="channel-delete-form">
