@@ -1,5 +1,5 @@
 """Turn activity suitable for the local viewer."""
-from collections import OrderedDict
+from collections import OrderedDict, deque
 import json
 import re
 
@@ -21,6 +21,7 @@ class CliActivity:
         self.role = role
         self.publish = publish
         self.tools = OrderedDict()
+        self.denials = deque(maxlen=256)
 
     def __call__(self, line):
         try:
@@ -33,10 +34,19 @@ class CliActivity:
             else:
                 self.codex(event)
 
+    def denied(self, tool_id, detail, reason=''):
+        if isinstance(tool_id, str):
+            if tool_id in self.denials:
+                return
+            self.denials.append(tool_id)
+        self.publish('cliActivityDenied', ' · '.join(filter(None, (detail, short_text(reason)))))
+
     def claude(self, event):
         kind = event.get('type')
         if kind == 'system' and event.get('subtype') == 'permission_denied':
-            self.publish('cliActivityDenied', short_text(event.get('tool_name')))
+            tool_id = event.get('tool_use_id')
+            label = self.tools.get(tool_id) if isinstance(tool_id, str) else None
+            self.denied(tool_id, label or short_text(event.get('tool_name')), event.get('decision_reason'))
         if kind not in ('assistant', 'user'):
             return
         message = event.get('message')
@@ -66,7 +76,10 @@ class CliActivity:
                 key = 'cliActivityResult'
                 if block.get('is_error'):
                     result = json.dumps(block.get('content'), ensure_ascii=False)
-                    key = 'cliActivityDenied' if PERMISSION_ERROR.search(result) else 'cliActivityToolFailed'
+                    if PERMISSION_ERROR.search(result) or (isinstance(tool_id, str) and tool_id in self.denials):
+                        self.denied(tool_id, label)
+                        continue
+                    key = 'cliActivityToolFailed'
                 self.publish(key, label)
 
     def codex(self, event):

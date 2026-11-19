@@ -367,6 +367,8 @@ class ManagedAgents:
         )
         if agent['role'] == 'claude':
             instructions += (
+                ' Use mcp__acs_workspace__inspect_folder for folder listings, file sizes, and line counts, '
+                'including filtered script counts. Do not use shell scripts to collect those details. '
                 ' For folder inspection, list and search the reference folder with Glob and Grep, '
                 'then read relevant current files with Read. Use Git only when the task asks for changes '
                 'relative to Git, history, branches, or another repository-specific operation.'
@@ -443,8 +445,9 @@ class ManagedAgents:
                     if attachment_prompt:
                         attachments = Path(scratch.name)
                     prompt += attachment_prompt
-                turn = managed_cli.Turn(managed_cli.command(program, agent, schema, attachments=attachments),
-                                        agent['cwd'], observer=observer)
+                args = managed_cli.command(program, agent, schema, attachments=attachments,
+                                           workspace=Path(agent['cwd']) if message else None)
+                turn = managed_cli.Turn(args, agent['cwd'], observer=observer)
                 self.processes[agent_id] = turn
             timeout = TASK_TIMEOUT_SECONDS if message else STARTUP_TIMEOUT_SECONDS
             session, body, model, quota = turn.run(

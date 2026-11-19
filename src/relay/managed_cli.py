@@ -6,12 +6,14 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import sys
 from tempfile import TemporaryFile
 from threading import Thread
 from time import monotonic
 from uuid import UUID
 
 from relay.errors import ApiError
+from relay.workspace_mcp import SERVER as WORKSPACE_MCP, TOOL_NAME as WORKSPACE_TOOL
 
 
 MAX_EVENT_BYTES = 8 * 1024 * 1024
@@ -92,7 +94,7 @@ def failure_key(role, error):
     return 'managedRunFailed'
 
 
-def command(program, agent, schema=None, *, attachments=None):
+def command(program, agent, schema=None, *, attachments=None, workspace=None):
     session = agent['session']
     model = agent['model']
     if agent['role'] == 'codex':
@@ -133,6 +135,14 @@ def command(program, agent, schema=None, *, attachments=None):
     args = [program, '--print', '--output-format', 'stream-json', '--verbose',
             '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
             '--settings', json.dumps(settings)]
+    if workspace:
+        runtime = Path(__file__).resolve().parents[1]
+        config = {'mcpServers': {WORKSPACE_MCP: {
+            'type': 'stdio',
+            'command': sys.executable,
+            'args': ['-I', '-B', '-X', 'utf8', str(runtime), 'workspace-mcp', '--root', str(workspace)],
+        }}}
+        args += ['--mcp-config', json.dumps(config), '--allowedTools', f'mcp__{WORKSPACE_MCP}__{WORKSPACE_TOOL}']
     if agent['effort']:
         args += ['--effort', agent['effort']]
     if model:

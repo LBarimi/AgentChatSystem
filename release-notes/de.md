@@ -6,6 +6,7 @@ AgentChatSystem ist ein lokaler Arbeitsbereich für Codex- und Claude-Sitzungen 
 
 ## Neuerungen in 1.0.0
 
+- Claude kann Projektordner auflisten und Skriptzeilen mit einem schreibgeschützten Tool zählen. Pro Aufruf erscheint eine verweigerte Berechtigung mit dem verfügbaren Grund.
 - Die Teilnehmerkarte zeigt laufende CLI-Aktivität. Aufrufe, Ergebnisse und verweigerte Berechtigungen werden an der Chat-Aufgabe gespeichert.
 - Claude untersucht bei Ordnerprüfungen direkt die Dateien und verwendet Git bei Aufgaben, die Repository-Informationen benötigen.
 - Verwaltete CLI-Aufgaben werden nach 30 Minuten ohne Ausgabe gestoppt. Laufende Aufgaben lassen sich auf der Karte beenden, und wartende Aufgaben haben eine eigene Kanalanzeige.

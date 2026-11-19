@@ -62,7 +62,7 @@ Managed tasks have up to two hours to finish. ACS stops a CLI after 30 minutes w
 
 Managed Claude agents use the reference folder as their working directory and approve ordinary file edits there without prompting. ACS exposes only the current turn's attachment copies as an additional read-only folder. Shell commands recognized by Claude Code's permission checks can run without prompts. On macOS, Linux, and WSL2, Claude Code can also auto-approve shell commands inside its [Bash sandbox](https://code.claude.com/docs/en/sandboxing) when available. Native Windows uses Claude Code's command permission checks. Commands that still require approval are declined. Use Claude Code 2.1.314 or later for workspace write boundaries.
 
-For folder reviews, ACS directs Claude to inspect the current files with Glob, Grep, and Read. Tasks that ask for Git status, diffs, or history can still use Git.
+For folder reviews, ACS directs Claude to inspect current files with Glob, Grep, and Read. Its read-only workspace tool lists files, reports sizes, and counts script lines inside the selected folder. Tasks that ask for Git status, diffs, or history can still use Git.
 
 On the server computer, open an agent card and choose **CLI activity** to follow tool calls, completion status, and permission denials. The same records are saved under the task message, so you can see the last recorded action if the CLI stalls or after the server restarts.
 

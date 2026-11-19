@@ -134,6 +134,8 @@ def parser():
     sub.add_parser('settings', help='Print the effective settings for the launcher.')
     server = sub.add_parser("serve")
     server.add_argument("--db", type=Path, default=PROJECT / "var/room.sqlite3")
+    workspace = sub.add_parser('workspace-mcp', help='Serve read-only reference folder tools.')
+    workspace.add_argument('--root', type=Path, required=True)
     sub.add_parser("status").add_argument('--channel', default='general')
     sub.add_parser('channels', help='채널 ID와 shared/logs 경로 표시')
     sub.add_parser('board', help='채널 게시판 최신 글 목록 표시').add_argument('--channel', default='general')
@@ -231,6 +233,9 @@ def main():
     for stream in [sys.stdout, sys.stderr]:
         stream.reconfigure(encoding="utf-8")
     args = parser().parse_args()
+    if args.action == 'workspace-mcp':
+        from relay.workspace_mcp import run
+        return run(args.root)
     settings = Settings()
     try:
         port = settings.port() if args.port is None else args.port

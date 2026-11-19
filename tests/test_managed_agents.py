@@ -156,6 +156,7 @@ class ManagedAgentsTest(unittest.TestCase):
             self.assertIn('Glob and Grep', prompts[0])
             self.assertIn('read relevant current files with Read', prompts[0])
             self.assertIn('Use Git only when the task asks', prompts[0])
+            self.assertIn('mcp__acs_workspace__inspect_folder', prompts[0])
 
     def test_cli_activity_is_saved_with_task_and_available_to_local_chat(self):
         class ObservedTurn(FakeTurn):
@@ -168,6 +169,8 @@ class ManagedAgentsTest(unittest.TestCase):
                                 'description': 'List project files', 'command': 'private command',
                             }},
                         ]}},
+                        {'type': 'system', 'subtype': 'permission_denied', 'tool_use_id': 't1',
+                         'tool_name': 'PowerShell', 'decision_reason': 'Command contains a script block'},
                         {'type': 'user', 'message': {'content': [{
                             'type': 'tool_result', 'tool_use_id': 't1', 'is_error': True,
                             'content': 'It requires approval; private tool output',
@@ -187,7 +190,7 @@ class ManagedAgentsTest(unittest.TestCase):
             self.assertEqual([event['kind'] for event in activity], [
                 'cliActivityStarted', 'cliActivityCall', 'cliActivityDenied', 'cliActivityFinished',
             ])
-            self.assertEqual(activity[2]['detail'], 'PowerShell · List project files')
+            self.assertEqual(activity[2]['detail'], 'PowerShell · List project files · Command contains a script block')
             self.assertNotIn('private', str(activity))
             self.assertEqual(self.room.managed.activity(self.channel, None, task, activity[1]['id'])['events'], activity[2:])
             with self.assertRaises(ApiError):
@@ -347,6 +350,16 @@ class ManagedAgentsTest(unittest.TestCase):
 
 
 class ManagedProcessTest(unittest.TestCase):
+    def test_claude_workspace_tool_is_bound_to_the_selected_directory(self):
+        agent = {'role': 'claude', 'session': 'existing-session', 'model': '', 'effort': ''}
+        workspace = Path.cwd() / 'fixture folder'
+        args = managed_cli.command('claude', agent, workspace=workspace)
+        config = json.loads(args[args.index('--mcp-config') + 1])
+        helper = config['mcpServers']['acs_workspace']
+        self.assertEqual(helper['args'][-3:], ['workspace-mcp', '--root', str(workspace)])
+        self.assertEqual(args[args.index('--allowedTools') + 1], 'mcp__acs_workspace__inspect_folder')
+        self.assertEqual(args[args.index('--permission-prompts') + 1], 'none')
+
     def test_codex_command_activity_classifies_denial_without_saving_output(self):
         records = []
         observe = CliActivity('codex', lambda kind, detail: records.append((kind, detail)))
