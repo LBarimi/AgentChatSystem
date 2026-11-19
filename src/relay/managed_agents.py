@@ -66,13 +66,35 @@ class ManagedAgents:
             JOIN participants p ON a.id=p.id WHERE a.id=? AND p.removed_at IS NULL
         """, (agent_id,)).fetchone()
 
-    def login(self, role):
-        args = managed_cli.auth_command(role, 'login')
+    def _startup_agent(self, agent_id, channel_id):
+        agent = self.get(agent_id) if isinstance(agent_id, str) else None
+        if not agent or agent['channel_id'] != channel_id or agent['session'] or not agent['error']:
+            raise ApiError('This agent is not waiting for startup recovery.', 409, key='managedNotReady')
+        return agent
+
+    def retry(self, agent_id, channel_id):
         with self.room.changed:
             if self.closed:
                 raise ApiError('ACS is stopping.', 503, key='errorUnavailable')
+            agent = self._startup_agent(agent_id, channel_id)
+            if agent['role'] in self.logins:
+                raise ApiError('Wait for CLI login to finish.', 409, key='managedAuthPending')
+            with self.db:
+                self.db.execute('UPDATE managed_agents SET error=NULL WHERE id=?', (agent['id'],))
+            self.room._notify()
+            return {'state': 'starting'}
+
+    def login(self, agent_id, channel_id):
+        with self.room.changed:
+            if self.closed:
+                raise ApiError('ACS is stopping.', 503, key='errorUnavailable')
+            agent = self._startup_agent(agent_id, channel_id)
+            if agent['error'] != 'managedAuthRequired':
+                raise ApiError('This agent has no login request.', 409, key='managedNotReady')
+            role = agent['role']
             if role in self.logins:
                 return {'state': 'pending'}
+            args = managed_cli.login_command(role)
             try:
                 turn = managed_cli.Turn(args, None)
             except OSError as error:
@@ -83,21 +105,15 @@ class ManagedAgents:
                 target=self._login, args=(role, turn), name='acs-login-' + role, daemon=True,
             )
             self.threads['login-' + role].start()
+            self.room._notify()
             return {'state': 'pending'}
-
-    def login_status(self, role):
-        if role not in EFFORTS:
-            raise ApiError('Choose Codex or Claude.', key='errorRole')
-        with self.room.changed:
-            return {'state': self.login_states.get(role, 'idle')}
 
     def _login(self, role, turn):
         state = 'failed'
         try:
             turn.read('', timeout=300)
-            managed_cli.require_login(role)
             state = 'ready'
-        except (OSError, subprocess.TimeoutExpired, managed_cli.CliError, ApiError):
+        except (OSError, subprocess.TimeoutExpired, managed_cli.CliError):
             pass
         finally:
             with self.room.changed:
@@ -105,6 +121,14 @@ class ManagedAgents:
                 self.logins.pop(role, None)
                 self.login_states[role] = state
                 self.threads.pop('login-' + role, None)
+                if not self.closed and state == 'ready':
+                    with self.db:
+                        self.db.execute("""
+                            UPDATE managed_agents SET error=NULL
+                            WHERE error='managedAuthRequired' AND session IS NULL
+                                AND id IN (SELECT id FROM participants WHERE role=? AND removed_at IS NULL)
+                        """, (role,))
+                self.room._notify()
             turn.reap()
 
     def create(self, payload, language):
@@ -129,6 +153,7 @@ class ManagedAgents:
         effort = payload.get('effort')
         if effort not in EFFORTS[role]:
             raise ApiError('Choose a supported reasoning level.', key='managedEffortInvalid')
+        managed_cli.require_executable(role)
         with self.room.changed:
             if self.closed:
                 raise ApiError('ACS is stopping.', 503, key='errorUnavailable')
@@ -137,12 +162,6 @@ class ManagedAgents:
                 parent = self.get(parent_id)
                 if not parent or parent['parent_id'] is not None or parent['channel_id'] != channel_id or not parent['session']:
                     raise ApiError('Choose a ready Codex parent in this channel.', 409, key='managedParentMissing')
-        managed_cli.require_login(role)
-        with self.room.changed:
-            if self.closed:
-                raise ApiError('ACS is stopping.', 503, key='errorUnavailable')
-            if parent_id is not None and self.get(parent_id) is None:
-                raise ApiError('Choose a ready Codex parent in this channel.', 409, key='managedParentMissing')
             with self.db:
                 agent = self.room._register(payload)
                 self.db.execute("""
@@ -165,7 +184,9 @@ class ManagedAgents:
 
     def public(self, row, *, local=False):
         status = 'ready'
-        if row['error']:
+        if row['error'] == 'managedAuthRequired':
+            status = 'auth'
+        elif row['error']:
             status = 'failed'
         elif not row['session']:
             status = 'starting'
@@ -180,6 +201,8 @@ class ManagedAgents:
         }
         if local:
             result['cwd'] = row['cwd']
+            if status == 'auth':
+                result['auth_state'] = self.login_states.get(row['role'], 'idle')
         return result
 
     def delete(self, ids):
@@ -216,8 +239,11 @@ class ManagedAgents:
             while True:
                 with self.room.changed:
                     agent = self.get(agent_id)
-                    if self.closed or not agent or (not agent['session'] and agent['error']):
+                    if self.closed or not agent:
                         return
+                    if not agent['session'] and agent['error']:
+                        self.room.changed.wait()
+                        continue
                     message = None
                     if agent['session']:
                         message = self.db.execute(f"""
@@ -283,12 +309,12 @@ class ManagedAgents:
         turn = None
         scratch = None
         response = None
+        failure = 'managedRunFailed'
         try:
             with self.room.changed:
                 if self.closed or not self.get(agent_id):
                     return
                 if message and not self.db.execute('SELECT 1 FROM messages WHERE id=?', (message_id,)).fetchone():
-                    self._finish(agent, message_id)
                     return
                 prompt, children = self._prompt(agent, message)
                 program = managed_cli.executable(agent['role'])
@@ -316,7 +342,10 @@ class ManagedAgents:
                     raise managed_cli.CliError('Invalid delegation')
                 target = child
             response = (session, body.strip()[:10000].encode('utf-8', 'replace').decode(), usage, target)
-        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired, managed_cli.CliError):
+        except managed_cli.CliError as error:
+            if message is None and managed_cli.authentication_required(agent['role'], error):
+                failure = 'managedAuthRequired'
+        except (OSError, ValueError, TypeError, KeyError, subprocess.TimeoutExpired):
             pass
         finally:
             with self.room.changed:
@@ -324,7 +353,7 @@ class ManagedAgents:
                     turn.stop()
                     self.processes.pop(agent_id, None)
                 if not self.closed and self.get(agent_id):
-                    self._finish(agent, message_id, response, failure=None if response else 'managedRunFailed')
+                    self._finish(agent, message_id, response, failure=None if response else failure)
             try:
                 if turn:
                     turn.reap()

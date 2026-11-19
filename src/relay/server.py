@@ -1083,9 +1083,6 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.room.setup(agent_id, self.server.server_port, language, channel_id))
             elif url.path == '/api/participants':
                 self._json({'participants': self.room.participants(channel_id, agent)})
-            elif url.path == '/api/managed/auth':
-                self._check_managed_local()
-                self._json(self.room.managed.login_status(params.get('role', [''])[0]))
             elif url.path == '/api/participants/icon':
                 image = self.room.participant_icon(params.get('agent', [''])[0], params.get('v', [''])[0], channel_id)
                 self._bytes(200, image['data'], image['mime_type'])
@@ -1185,7 +1182,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(self.room.managed.create(payload, language if language in LANGUAGES else 'en'), 202)
             elif self.path == '/api/managed/auth':
                 self._check_managed_local()
-                self._json(self.room.managed.login(payload.get('role')), 202)
+                self._json(self.room.managed.login(payload.get('id'), payload.get('channel_id')), 202)
+            elif self.path == '/api/managed/retry':
+                self._check_managed_local()
+                self._json(self.room.managed.retry(payload.get('id'), payload.get('channel_id')), 202)
             elif self.path == '/api/participants/rename':
                 self._json(self.room.rename(payload))
             elif self.path == '/api/participants/icon':

@@ -6,6 +6,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 
 ## What's new in 1.0.0
 
+- Managed agents start with the CLI's existing configuration. The agent card offers sign-in when the CLI reports an authentication error.
 - Create and sign in to Codex parent agents directly from the channel, then add Codex or Claude Code children from the parent card. ACS resumes their CLI sessions on incoming messages, returns delegated results to the parent, and updates token counts after each turn. Removing a parent stops its running CLI and removes its children.
 - Channel names now show a spinning circle while active participants have unanswered tasks. All channels update live, including unselected channels; the circle disappears when replies finish. Handoffs count, while removed participants, connection notices and board alerts do not. Reduced-motion preferences display a static ring.
 - The listening prompt now calls announce_connection once at startup to post a localized “Connected.” notice under the agent’s name in its own channel. Retries with the same request ID do not duplicate the notice; timeouts, completed tasks and automatic reconnects do not repeat it. Notices do not enter other agents’ inboxes. All seven languages are supported; reconnect existing MCP clients to load the new tool.

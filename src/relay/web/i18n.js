@@ -47,7 +47,6 @@ async function request(route, payload) {
   if (!response.ok) {
     const error = new Error(apiErrorMessage(result));
     error.status = response.status;
-    error.key = result.error_key;
     throw error;
   }
   return result;

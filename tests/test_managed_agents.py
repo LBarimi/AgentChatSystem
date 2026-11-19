@@ -61,7 +61,6 @@ class ManagedAgentsTest(unittest.TestCase):
         self.addCleanup(self.room.db.close)
         self.addCleanup(self.room.managed.close)
         self.addCleanup(patch.stopall)
-        patch.object(managed_cli, 'require_login').start()
         patch.object(managed_cli, 'executable', side_effect=lambda role: role).start()
         patch.object(managed_cli, 'Turn', FakeTurn).start()
         self.channel = self.room.create_channel({'name': 'Team'})['id']
@@ -116,13 +115,7 @@ class ManagedAgentsTest(unittest.TestCase):
         self.until(lambda: not self.room.managed.threads)
         self.assertEqual(self.room.snapshot(self.channel)['total_messages'], 3)
 
-    def test_requires_auth_and_rejects_external_tasks_and_cross_channel_parent(self):
-        error = ApiError('sign in', 401, key='managedAuthRequired')
-        with patch.object(managed_cli, 'require_login', side_effect=error):
-            with self.assertRaises(ApiError) as rejected:
-                self.create('codex', 'Coordinator')
-            self.assertEqual(rejected.exception.key, 'managedAuthRequired')
-            self.assertEqual(self.room.participants(self.channel), [])
+    def test_rejects_external_tasks_and_cross_channel_parent(self):
         parent = self.create('codex', 'Coordinator')
         self.ready(parent)
         with self.assertRaises(ApiError):
@@ -135,8 +128,61 @@ class ManagedAgentsTest(unittest.TestCase):
         with self.assertRaises(ApiError):
             self.room.delete_channel(self.channel, allow_managed=False)
 
+    def test_offers_login_only_after_an_auth_failure_and_retries_same_card(self):
+        authenticated = False
+        commands = []
+
+        class StartupTurn(FakeTurn):
+            def read(self, prompt, timeout):
+                nonlocal authenticated
+                commands.append(self.args[:2])
+                if self.args == ['codex', 'login']:
+                    authenticated = True
+                    return ''
+                if not authenticated:
+                    error = {'type': 'turn.failed', 'error': {'message': '401 Unauthorized: Missing bearer authentication'}}
+                    raise managed_cli.CliError('CLI failed', output=json.dumps(error))
+                return super().read(prompt, timeout)
+
+        with patch.object(managed_cli, 'Turn', StartupTurn):
+            parent = self.create('codex', 'Coordinator')
+            self.until(lambda: self.room.managed.get(parent)['error'])
+            card = self.room.participants(self.channel, local=True)[0]
+            self.assertEqual((card['state'], card['auth_state']), ('auth', 'idle'))
+            self.assertEqual(commands, [['codex', 'exec']])
+            self.room.managed.login(parent, self.channel)
+            self.ready(parent)
+            self.assertEqual(commands, [['codex', 'exec'], ['codex', 'login'], ['codex', 'exec']])
+            self.assertEqual(self.room.participants(self.channel)[0]['id'], parent)
+
+    def test_generic_startup_failure_offers_retry_without_login(self):
+        class InvalidModelTurn(FakeTurn):
+            def read(self, prompt, timeout):
+                raise managed_cli.CliError('CLI exited', diagnostics='Error: unknown model')
+
+        with patch.object(managed_cli, 'Turn', InvalidModelTurn):
+            parent = self.create('codex', 'Coordinator')
+            self.until(lambda: self.room.managed.get(parent)['error'])
+            card = self.room.participants(self.channel, local=True)[0]
+            self.assertEqual(card['state'], 'failed')
+            self.assertNotIn('auth_state', card)
+            with self.assertRaises(ApiError):
+                self.room.managed.login(parent, self.channel)
+        self.room.managed.retry(parent, self.channel)
+        self.ready(parent)
+
 
 class ManagedProcessTest(unittest.TestCase):
+    def test_claude_error_requires_auth_but_model_message_does_not(self):
+        error_result = {'type': 'result', 'is_error': True, 'result': 'Not logged in · Please run /login'}
+        with self.assertRaises(managed_cli.CliError) as rejected:
+            managed_cli.result('claude', json.dumps(error_result))
+        self.assertTrue(managed_cli.authentication_required('claude', rejected.exception))
+        failed = managed_cli.CliError('CLI exited', output=json.dumps({
+            'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'Please run /login'},
+        }), diagnostics='Error: network timeout')
+        self.assertFalse(managed_cli.authentication_required('codex', failed))
+
     def test_cancellation_terminates_the_process_and_its_child(self):
         child = (
             'from pathlib import Path; from time import sleep; '

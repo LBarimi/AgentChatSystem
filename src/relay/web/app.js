@@ -228,7 +228,10 @@ el("clear-chat-form").addEventListener("submit", async (event) => {
   }
 });
 
-const managedStates = { starting: "managedStarting", ready: "managedReady", busy: "managedBusy", failed: "managedFailed" };
+const managedStates = {
+  starting: "managedStarting", ready: "managedReady", busy: "managedBusy",
+  failed: "managedFailed", auth: "managedAuthNeeded",
+};
 
 function participantCard(agent) {
   const status = element("span", "agent-status");
@@ -948,7 +951,13 @@ function renderSetupPrompts(setup, language) {
 
 function renderManagedSetup(agent) {
   el("setup-managed-folder").textContent = agent.cwd || t("managedLocalOnly");
-  el("setup-managed-status").textContent = t(agent.error || managedStates[agent.state] || "managedStarting");
+  const pending = agent.auth_state === "pending";
+  const authentication = agent.state === "auth";
+  const status = pending ? "managedAuthPending" : agent.auth_state === "failed" ? "managedAuthFailed"
+    : agent.error || managedStates[agent.state] || "managedStarting";
+  el("setup-managed-status").textContent = t(status);
+  el("setup-managed-recovery").hidden = !current?.managed_local || agent.resumable || !agent.error || pending;
+  el("setup-managed-login").hidden = !authentication;
 }
 
 async function openSetup(agentId, refreshOnly = false) {
@@ -973,6 +982,7 @@ async function openSetup(agentId, refreshOnly = false) {
   if (language !== document.documentElement.lang) return openSetup(agentId, refreshOnly);
   setupAgent = setup.id;
   if (!refreshOnly) {
+    showMessage("setup-managed-error", "");
     initializeIconEditor(setup);
     el("agent-name").value = setup.name;
     showMessage("rename-error", "");
@@ -984,6 +994,23 @@ async function openSetup(agentId, refreshOnly = false) {
 }
 
 el("setup-prompts-retry").addEventListener("click", () => openSetup(setupAgent, true));
+
+for (const [name, route] of [["retry", "/api/managed/retry"], ["login", "/api/managed/auth"]]) {
+  const button = el("setup-managed-" + name);
+  button.addEventListener("click", async () => {
+    const id = setupAgent;
+    if (!id || button.disabled) return;
+    button.disabled = true;
+    showMessage("setup-managed-error", "");
+    try {
+      await request(route, { id, channel_id: activeChannel });
+    } catch (error) {
+      if (setupDialog.open && setupAgent === id) showMessage("setup-managed-error", error.message);
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
 
 el("roster").addEventListener("click", async (event) => {
   const action = event.target.closest("[data-parent]");
@@ -1013,46 +1040,13 @@ function openAgentCreation(role, parent) {
   if (role === "claude") efforts.push(["max", "reasoningMax"]);
   el("join-effort").replaceChildren(...efforts.map(([value, label]) => new Option(t(label), value)));
   el("join-effort").value = "medium";
-  el("join-auth").hidden = true;
-  el("join-login").disabled = false;
   el("join-submit").disabled = false;
-  el("join-auth-status").textContent = "";
   showMessage("join-error", "");
   joinDialog.showModal();
   el("join-name").focus();
 }
 el("add-agent").addEventListener("click", () => openAgentCreation("codex"));
 joinDialog.addEventListener("close", () => { if (!joinDialog.open) joinContext = null; });
-
-el("join-login").addEventListener("click", async () => {
-  const context = joinContext;
-  if (!context) return;
-  el("join-login").disabled = el("join-submit").disabled = true;
-  showMessage("join-error", "");
-  el("join-auth-status").textContent = t("managedAuthPending");
-  try {
-    await request("/api/managed/auth", { role: context.role });
-    while (joinDialog.open && joinContext === context) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      if (!joinDialog.open || joinContext !== context) break;
-      const { state } = await request("/api/managed/auth?" + new URLSearchParams({ role: context.role }));
-      if (state === "pending") continue;
-      el("join-auth-status").textContent = t(state === "ready" ? "managedAuthReady" : "managedAuthFailed");
-      if (state === "ready") {
-        el("join-submit").disabled = false;
-        // Release the login controls before the new submit handler takes ownership.
-        setTimeout(() => {
-          if (joinDialog.open && joinContext === context) el("join-form").requestSubmit();
-        }, 0);
-      }
-      break;
-    }
-  } catch (error) {
-    if (joinContext === context) showMessage("join-error", error.message);
-  } finally {
-    if (joinContext === context) el("join-login").disabled = el("join-submit").disabled = false;
-  }
-});
 
 el("join-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1069,11 +1063,7 @@ el("join-form").addEventListener("submit", async (event) => {
     if (joinContext === context) joinDialog.close();
     if (activeChannel === context.channel_id) loadRoom();
   } catch (error) {
-    if (joinContext === context) {
-      showMessage("join-error", error.message);
-      el("join-auth").hidden = error.key !== "managedAuthRequired";
-      if (!el("join-auth").hidden) el("join-login").focus();
-    }
+    if (joinContext === context) showMessage("join-error", error.message);
   } finally {
     if (joinContext === context) button.disabled = false;
   }

@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 from tempfile import TemporaryFile
@@ -11,7 +12,10 @@ from relay.errors import ApiError
 
 
 class CliError(Exception):
-    pass
+    def __init__(self, message, *, output='', diagnostics=''):
+        super().__init__(message)
+        self.output = output
+        self.diagnostics = diagnostics
 
 
 def executable(role):
@@ -24,30 +28,45 @@ def executable(role):
     return None
 
 
-def auth_command(role, action):
+def require_executable(role):
     if role not in ('codex', 'claude'):
         raise ApiError('Choose Codex or Claude.', key='errorRole')
     program = executable(role)
     if not program:
         provider = 'Codex' if role == 'codex' else 'Claude Code'
         raise ApiError('Install the CLI and add its executable to PATH.', 503, key='managedCliMissing', provider=provider)
-    if role == 'codex':
-        return [program, 'login'] + (['status'] if action == 'status' else [])
-    return [program, 'auth', action]
+    return program
 
 
-def require_login(role):
-    args = auth_command(role, 'status')
-    turn = None
-    try:
-        turn = Turn(args, None)
-        turn.read('', timeout=10)
-    except (OSError, subprocess.TimeoutExpired, CliError) as error:
-        raise ApiError('Sign in to the CLI before creating an agent.', 401, key='managedAuthRequired') from error
-    finally:
-        if turn:
-            turn.stop()
-            turn.reap()
+def login_command(role):
+    program = require_executable(role)
+    return [program, 'login'] if role == 'codex' else [program, 'auth', 'login']
+
+
+def authentication_required(role, error):
+    """Examine CLI error events and diagnostics, never a successful model reply."""
+    errors = [error.diagnostics]
+    for line in error.output.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            # Some CLI versions report a plain-text error when no session starts.
+            if re.match(r'^\s*(?:error:\s*)?(?:not logged in|please run /login)\b', line, re.I):
+                errors.append(line)
+            continue
+        if not isinstance(event, dict):
+            continue
+        if role == 'codex' and event.get('type') in ('error', 'turn.failed'):
+            detail = event.get('error') or event.get('message') or ''
+            errors.append(detail.get('message', '') if isinstance(detail, dict) else detail)
+        elif role == 'claude' and event.get('type') == 'result' and event.get('is_error'):
+            errors.append(event.get('result', ''))
+            if isinstance(event.get('errors'), list):
+                errors.extend(event['errors'])
+    pattern = (r'^\s*(?:error:\s*)?not logged in\b|\bplease run /login\b|'
+               r'\b(?:run|use) `?codex login\b|\b401\s+(?:unauthorized|authentication_error)\b|'
+               r'\b(?:authentication_error|invalid_api_key|token_expired|token_revoked)\b')
+    return any(re.search(pattern, detail, re.I | re.M) for detail in errors if isinstance(detail, str))
 
 
 def command(program, agent, schema=None):
@@ -102,7 +121,7 @@ def result(role, output):
             raise ValueError
         return str(UUID(session)), body.strip(), tokens(role, usage)
     except (ValueError, TypeError, KeyError, AttributeError) as error:
-        raise CliError('Unsuccessful or invalid CLI response') from error
+        raise CliError('Unsuccessful or invalid CLI response', output=output) from error
 
 
 def tokens(role, usage):
@@ -124,12 +143,14 @@ def tokens(role, usage):
 class Turn:
     def __init__(self, args, cwd):
         self.output = TemporaryFile()
+        self.error_output = None
         self.guard = None
         try:
+            self.error_output = TemporaryFile()
             self.guard = WindowsJob() if os.name == 'nt' else None
             self.process = subprocess.Popen(
                 args, cwd=Path(cwd) if cwd else None, stdin=subprocess.PIPE, stdout=self.output,
-                stderr=subprocess.DEVNULL, encoding='utf-8', errors='replace',
+                stderr=self.error_output, encoding='utf-8', errors='replace',
                 start_new_session=os.name != 'nt',
                 creationflags=(subprocess.CREATE_NO_WINDOW | 0x04) if self.guard else 0,  # CREATE_SUSPENDED
             )
@@ -143,6 +164,8 @@ class Turn:
         except BaseException:
             if self.guard:
                 self.guard.close()
+            if self.error_output:
+                self.error_output.close()
             self.output.close()
             raise
         self.stopped = False
@@ -162,13 +185,16 @@ class Turn:
 
     def read(self, prompt, timeout):
         self.process.communicate(prompt, timeout=timeout)
-        if self.process.returncode:
-            raise CliError('CLI exited unsuccessfully')
         self.output.seek(0)
         output = self.output.read(8 * 1024 * 1024 + 1)
         if len(output) > 8 * 1024 * 1024:
             raise CliError('CLI output exceeds the response limit')
-        return output.decode('utf-8', errors='replace')
+        output = output.decode('utf-8', errors='replace')
+        if self.process.returncode:
+            self.error_output.seek(max(0, self.error_output.seek(0, os.SEEK_END) - 65536))
+            diagnostics = self.error_output.read(65536).decode('utf-8', errors='replace')
+            raise CliError('CLI exited unsuccessfully', output=output, diagnostics=diagnostics)
+        return output
 
     def reap(self):
         try:
@@ -179,6 +205,7 @@ class Turn:
         finally:
             self.process.stdin.close()
             self.output.close()
+            self.error_output.close()
 
 
 class WindowsJob:

@@ -6,6 +6,7 @@ AgentChatSystem ist ein lokaler Arbeitsbereich für Codex- und Claude-Sitzungen 
 
 ## Neuerungen in 1.0.0
 
+- Agenten starten mit der vorhandenen CLI-Konfiguration. Meldet die CLI einen Authentifizierungsfehler, bietet die Karte die Anmeldung an.
 - Erstelle einen Codex-Hauptagenten im Kanal, melde dich bei der CLI an und füge Codex- oder Claude-Code-Unteragenten auf seiner Karte hinzu. ACS setzt bei Nachrichten die CLI-Sitzungen fort, gibt delegierte Ergebnisse an den Hauptagenten zurück und aktualisiert den Tokenverbrauch nach jedem Durchlauf. Beim Entfernen eines Hauptagenten endet seine laufende CLI und seine Unteragenten werden entfernt.
 - Rechts neben dem Kanalnamen erscheint ein rotierender Kreis, solange aktive Teilnehmer unbeantwortete Aufgaben haben. Auch nicht ausgewählte Kanäle werden live aktualisiert; nach allen Antworten verschwindet der Kreis. Übergaben zählen mit, entfernte Teilnehmer, Verbindungsnachrichten und Pinnwandmeldungen nicht. Bei reduzierter Bewegung wird ein statischer Ring angezeigt.
 - Der Warteprompt ruft beim Start einmal announce_connection auf und veröffentlicht „Verbunden.“ unter dem Agentennamen im eigenen Kanal. Wiederholungen mit derselben Anfrage-ID erzeugen keine Duplikate; Zeitüberschreitungen, abgeschlossene Aufgaben und automatische Neuverbindungen wiederholen die Begrüßung nicht. Andere Agenten erhalten keinen Auftrag. Alle sieben Sprachen werden unterstützt; bestehende MCP-Clients müssen zum Laden des neuen Werkzeugs neu verbunden werden.

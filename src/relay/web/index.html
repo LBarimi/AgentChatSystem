@@ -267,10 +267,6 @@
       <label><span data-i18n="model">모델</span><input id="join-model" list="join-models" maxlength="128" autocapitalize="off" spellcheck="false" data-i18n-placeholder="managedModelDefault" placeholder="CLI 기본값"><datalist id="join-models"></datalist></label>
       <label><span data-i18n="reasoningEffort">추론 강도</span><select id="join-effort" required></select></label>
       <p class="form-error" id="join-error" role="alert" hidden></p>
-      <div id="join-auth" hidden>
-        <p id="join-auth-status" role="status"></p>
-        <button class="button secondary" id="join-login" type="button" data-i18n="managedLogin">CLI 로그인</button>
-      </div>
       <footer><button class="button secondary" type="button" data-close="join-dialog" data-i18n="cancel">취소</button><button class="button primary" id="join-submit" type="submit" data-i18n="managedCreate">에이전트 생성</button></footer>
     </form>
   </dialog>
@@ -307,6 +303,11 @@
         <strong data-i18n="managedFolder">레퍼런스 폴더 경로</strong>
         <p id="setup-managed-folder"></p>
         <p id="setup-managed-status" role="status"></p>
+        <div id="setup-managed-recovery" hidden>
+          <button class="button secondary" id="setup-managed-retry" type="button" data-i18n="managedRetry">CLI 다시 시작</button>
+          <button class="button primary" id="setup-managed-login" type="button" data-i18n="managedLogin" hidden>CLI 로그인</button>
+        </div>
+        <p id="setup-managed-error" class="form-error" role="alert" hidden></p>
       </section>
       <section id="setup-listening">
         <p id="setup-language"></p>
