@@ -6,6 +6,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 
 ## What's new in 1.0.0
 
+- Managed Claude agents approve edits inside their reference folder without prompting. Shell commands follow Claude Code’s platform-specific permission checks.
 - Managed tasks can run for up to two hours. Failure messages identify timeouts and recognized CLI errors.
 - All attachment flows accept PPT files.
 - Chat messages support individual deletion and five reactions. Managed cards show reported account usage percentages and Claude model versions. The channel indicator also spins while a CLI agent is starting or working.

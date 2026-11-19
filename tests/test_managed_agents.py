@@ -244,6 +244,32 @@ class ManagedAgentsTest(unittest.TestCase):
 
 
 class ManagedProcessTest(unittest.TestCase):
+    def test_claude_approves_workspace_edits_with_platform_shell_limits(self):
+        agent = {'role': 'claude', 'session': 'existing-session', 'model': 'sonnet', 'effort': 'high'}
+        attachments = Path.cwd() / 'var' / 'acs-turn-1234'
+        for platform in ('nt', 'posix'):
+            with self.subTest(platform=platform), patch.object(managed_cli.os, 'name', platform):
+                args = managed_cli.command('claude', agent, attachments=attachments)
+                settings = json.loads(args[args.index('--settings') + 1])
+                self.assertEqual(args[args.index('--permission-mode') + 1], 'acceptEdits')
+                self.assertEqual(args[args.index('--permission-prompts') + 1], 'none')
+                self.assertEqual(args[args.index('--resume') + 1], 'existing-session')
+                self.assertNotIn('--dangerously-skip-permissions', args)
+                permissions = settings['permissions']
+                self.assertTrue(permissions['blockReadsOutsideWorkingDirectories'])
+                self.assertTrue(permissions['blockWritesOutsideWorkingDirectories'])
+                self.assertEqual(permissions['additionalDirectories'], [str(attachments)])
+                self.assertEqual(permissions['deny'], ['Edit(//**/acs-turn-1234/**)'])
+                if platform == 'nt':
+                    self.assertNotIn('sandbox', settings)
+                else:
+                    self.assertTrue(settings['sandbox']['autoAllowBashIfSandboxed'])
+                    self.assertFalse(settings['sandbox']['allowUnsandboxedCommands'])
+                    self.assertEqual(settings['sandbox']['filesystem']['denyWrite'], [str(attachments)])
+
+        plain = managed_cli.command('claude', agent)
+        self.assertNotIn('additionalDirectories', json.loads(plain[plain.index('--settings') + 1])['permissions'])
+
     def test_claude_error_requires_auth_but_model_message_does_not(self):
         error_result = {'type': 'result', 'is_error': True, 'result': 'Not logged in · Please run /login'}
         with self.assertRaises(managed_cli.CliError) as rejected:

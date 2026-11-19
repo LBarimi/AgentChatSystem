@@ -90,7 +90,7 @@ def failure_key(role, error):
     return 'managedRunFailed'
 
 
-def command(program, agent, schema=None):
+def command(program, agent, schema=None, *, attachments=None):
     session = agent['session']
     model = agent['model']
     if agent['role'] == 'codex':
@@ -108,7 +108,25 @@ def command(program, agent, schema=None):
         if session:
             args.append(session)
         return args + ['-']
-    args = [program, '--print', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'default']
+    permissions = {
+        'blockReadsOutsideWorkingDirectories': True,
+        'blockWritesOutsideWorkingDirectories': True,
+    }
+    settings = {'permissions': permissions}
+    if attachments:
+        # ACS passes only the current turn's copies of user attachments.
+        permissions['additionalDirectories'] = [str(attachments)]
+        permissions['deny'] = [f'Edit(//**/{attachments.name}/**)']
+    if os.name != 'nt':
+        settings['sandbox'] = {
+            'enabled': True, 'autoAllowBashIfSandboxed': True,
+            'allowUnsandboxedCommands': False,
+        }
+        if attachments:
+            settings['sandbox']['filesystem'] = {'denyWrite': [str(attachments)]}
+    args = [program, '--print', '--output-format', 'stream-json', '--verbose',
+            '--permission-mode', 'acceptEdits', '--permission-prompts', 'none',
+            '--settings', json.dumps(settings)]
     if agent['effort']:
         args += ['--effort', agent['effort']]
     if model:

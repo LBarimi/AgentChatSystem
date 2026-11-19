@@ -342,13 +342,17 @@ class ManagedAgents:
                 if not program:
                     raise managed_cli.CliError('CLI missing')
                 schema = None
+                attachments = None
                 if message:
                     scratch = TemporaryDirectory(prefix='acs-turn-', dir=self.data_dir)
                     if not agent['parent_id']:
                         schema = Path(scratch.name) / 'response.json'
                         schema.write_text(json.dumps(PARENT_SCHEMA), encoding='utf-8')
-                    prompt += self._attachments(message, Path(scratch.name))
-                turn = managed_cli.Turn(managed_cli.command(program, agent, schema), agent['cwd'])
+                    attachment_prompt = self._attachments(message, Path(scratch.name))
+                    if attachment_prompt:
+                        attachments = Path(scratch.name)
+                    prompt += attachment_prompt
+                turn = managed_cli.Turn(managed_cli.command(program, agent, schema, attachments=attachments), agent['cwd'])
                 self.processes[agent_id] = turn
             timeout = TASK_TIMEOUT_SECONDS if message else STARTUP_TIMEOUT_SECONDS
             session, body, model, quota = turn.run(agent['role'], prompt, timeout)
