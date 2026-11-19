@@ -1,4 +1,13 @@
 {
+  "cliActivityTitle": "查看 CLI 活動",
+  "cliActivityEmpty": "CLI 活動會在這裡顯示。",
+  "cliActivityStarted": "工作已開始",
+  "cliActivityCall": "呼叫工具",
+  "cliActivityResult": "工具已完成",
+  "cliActivityToolFailed": "工具失敗",
+  "cliActivityDenied": "權限遭拒",
+  "cliActivityFinished": "工作已完成",
+  "cliActivityFailed": "工作已結束",
   "managedStopTask": "停止工作",
   "managedStopping": "正在停止…",
   "managedTaskStopped": "使用者停止了這項 CLI 工作。",

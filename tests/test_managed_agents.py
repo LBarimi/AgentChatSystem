@@ -1,6 +1,7 @@
 import json
 from contextlib import contextmanager
 from pathlib import Path
+import sqlite3
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -12,17 +13,19 @@ from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from relay import managed_cli, managed_options
+from relay.cli_activity import CliActivity
 from relay.errors import ApiError
 from relay.server import Room
 
 
 class FakeTurn:
-    def __init__(self, args, cwd):
+    def __init__(self, args, cwd, *, observer=None):
         self.args = args
         self.cwd = cwd
         self.stopped = Event()
         self.holding = Event()
         self.child = None
+        self.observer = observer
         self.session = next((arg for arg in args if len(arg) == 36 and arg.count('-') == 4), str(uuid4()))
 
     def read(self, prompt, timeout):
@@ -153,6 +156,55 @@ class ManagedAgentsTest(unittest.TestCase):
             self.assertIn('Glob and Grep', prompts[0])
             self.assertIn('read relevant current files with Read', prompts[0])
             self.assertIn('Use Git only when the task asks', prompts[0])
+
+    def test_cli_activity_is_saved_with_task_and_available_to_local_chat(self):
+        class ObservedTurn(FakeTurn):
+            def read(self, prompt, timeout):
+                if self.observer and 'inspect the project' in prompt:
+                    for event in (
+                        {'type': 'assistant', 'message': {'content': [
+                            {'type': 'thinking', 'thinking': 'private reasoning'},
+                            {'type': 'tool_use', 'id': 't1', 'name': 'PowerShell', 'input': {
+                                'description': 'List project files', 'command': 'private command',
+                            }},
+                        ]}},
+                        {'type': 'user', 'message': {'content': [{
+                            'type': 'tool_result', 'tool_use_id': 't1', 'is_error': True,
+                            'content': 'It requires approval; private tool output',
+                        }]}},
+                    ):
+                        self.observer(json.dumps(event))
+                return super().read(prompt, timeout)
+
+        with patch.object(managed_cli, 'Turn', ObservedTurn):
+            parent = self.create('codex', 'Coordinator')
+            self.ready(parent)
+            child = self.create('claude', 'Reviewer', parent)
+            self.ready(child)
+            task = self.task('inspect the project', child)['id']
+            self.until(lambda: self.room.snapshot(self.channel)['messages'][-1]['reply_to'] == task)
+            activity = self.room.managed.activity(self.channel, child, task, 0)['events']
+            self.assertEqual([event['kind'] for event in activity], [
+                'cliActivityStarted', 'cliActivityCall', 'cliActivityDenied', 'cliActivityFinished',
+            ])
+            self.assertEqual(activity[2]['detail'], 'PowerShell · List project files')
+            self.assertNotIn('private', str(activity))
+            self.assertEqual(self.room.managed.activity(self.channel, None, task, activity[1]['id'])['events'], activity[2:])
+            with self.assertRaises(ApiError):
+                self.room.managed.activity('general', None, task, 0)
+            local = self.room.snapshot(self.channel, viewer_address='127.0.0.1')['messages'][-2]
+            visitor = self.room.snapshot(self.channel, viewer_address='192.168.1.10')['messages'][-2]
+            self.assertTrue(local['has_cli_activity'])
+            self.assertNotIn('has_cli_activity', visitor)
+            with self.room.changed:
+                persisted = sqlite3.connect(self.directory / 'room.sqlite3')
+                try:
+                    self.assertEqual(persisted.execute('SELECT COUNT(*) FROM cli_activity WHERE message_id=?', (task,)).fetchone()[0], 4)
+                finally:
+                    persisted.close()
+            self.room.delete_message({'channel_id': self.channel, 'message_id': task}, '127.0.0.1')
+            with self.room.changed:
+                self.assertFalse(self.room.db.execute('SELECT 1 FROM cli_activity WHERE message_id=?', (task,)).fetchone())
 
     def test_stop_only_cancels_the_selected_task_and_preserves_the_session(self):
         parent = self.create('codex', 'Coordinator')
@@ -295,6 +347,18 @@ class ManagedAgentsTest(unittest.TestCase):
 
 
 class ManagedProcessTest(unittest.TestCase):
+    def test_codex_command_activity_classifies_denial_without_saving_output(self):
+        records = []
+        observe = CliActivity('codex', lambda kind, detail: records.append((kind, detail)))
+        command = {'type': 'command_execution', 'command': 'type listing.txt'}
+        observe(json.dumps({'type': 'item.started', 'item': command}))
+        observe(json.dumps({'type': 'item.completed', 'item': command | {
+            'status': 'failed', 'exit_code': 1, 'aggregated_output': 'Access is denied. Debug output',
+        }}))
+        self.assertEqual(records, [
+            ('cliActivityCall', 'type listing.txt'), ('cliActivityDenied', 'type listing.txt'),
+        ])
+
     def test_codex_disallows_interactive_requests_with_workspace_access(self):
         agent = {'role': 'codex', 'session': 'existing-session', 'model': '', 'effort': ''}
         args = managed_cli.command('codex', agent)
@@ -330,6 +394,30 @@ class ManagedProcessTest(unittest.TestCase):
             finally:
                 silent.stop()
                 silent.reap()
+
+    def test_activity_is_observed_before_process_returns_final_result(self):
+        session = str(uuid4())
+        program = (
+            'import json, sys, time\n'
+            'from pathlib import Path\n'
+            'print(json.dumps({"type":"progress"}), flush=True)\n'
+            'while not Path("continue").exists(): time.sleep(.02)\n'
+            'print(json.dumps({"type":"result","session_id":sys.argv[1],"result":"Done"}),flush=True)\n'
+        )
+        with TemporaryDirectory() as directory:
+            seen = []
+
+            def observe(line):
+                seen.append(json.loads(line)['type'])
+                (Path(directory) / 'continue').touch()
+
+            turn = managed_cli.Turn([sys.executable, '-c', program, session], directory, observer=observe)
+            try:
+                self.assertEqual(turn.run('claude', '', timeout=5, idle_timeout=2)[1], 'Done')
+                self.assertEqual(seen, ['progress', 'result'])
+            finally:
+                turn.stop()
+                turn.reap()
 
     def test_claude_approves_workspace_edits_with_platform_shell_limits(self):
         agent = {'role': 'claude', 'session': 'existing-session', 'model': 'sonnet', 'effort': 'high'}

@@ -64,6 +64,8 @@ Managed Claude agents use the reference folder as their working directory and ap
 
 For folder reviews, ACS directs Claude to inspect the current files with Glob, Grep, and Read. Tasks that ask for Git status, diffs, or history can still use Git.
 
+On the server computer, open an agent card and choose **CLI activity** to follow tool calls, completion status, and permission denials. The same records are saved under the task message, so you can see the last recorded action if the CLI stalls or after the server restarts.
+
 Removing a card stops its running CLI and removes the saved session link from ACS. Removing a parent also removes its children. Removing a channel stops all managed agents in that channel. The provider's local conversation history and the reference folder stay on disk.
 
 CLI agents use the provider’s normal authentication and tool permissions. Codex uses a workspace-write sandbox. Create, sign in, send CLI tasks, and remove managed agents from the server computer on localhost. LAN viewers can follow the shared conversation and token counts.

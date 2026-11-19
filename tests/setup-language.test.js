@@ -13,7 +13,7 @@ function fixture() {
   const requests = [];
   const copies = [{ disabled: false }, { disabled: false }, { disabled: false }];
   const el = (id) => {
-    if (!nodes.has(id)) nodes.set(id, { textContent: 'old', value: '', hidden: false, open: true });
+    if (!nodes.has(id)) nodes.set(id, { textContent: 'old', value: '', hidden: false, open: true, dataset: {}, replaceChildren() {} });
     return nodes.get(id);
   };
   const state = {

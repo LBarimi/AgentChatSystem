@@ -1,4 +1,13 @@
 {
+  "cliActivityTitle": "Активность CLI",
+  "cliActivityEmpty": "Здесь появится активность CLI.",
+  "cliActivityStarted": "Задача запущена",
+  "cliActivityCall": "Вызов инструмента",
+  "cliActivityResult": "Инструмент завершил работу",
+  "cliActivityToolFailed": "Ошибка инструмента",
+  "cliActivityDenied": "Доступ запрещён",
+  "cliActivityFinished": "Задача завершена",
+  "cliActivityFailed": "Задача остановлена",
   "managedStopTask": "Остановить задачу",
   "managedStopping": "Остановка…",
   "managedTaskStopped": "Пользователь остановил эту задачу CLI.",

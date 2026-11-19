@@ -358,6 +358,7 @@ class Room:
                 return {'channel_id': channel_id, 'cleared': count}
 
     def _delete_channel_messages(self, channel_id):
+        self.db.execute('DELETE FROM cli_activity WHERE channel_id=?', (channel_id,))
         self.db.execute('DELETE FROM message_reactions WHERE message_id IN (SELECT id FROM messages WHERE channel_id=?)', (channel_id,))
         self.db.execute('DELETE FROM chat_attachments WHERE message_id IN (SELECT id FROM messages WHERE channel_id=?)', (channel_id,))
         self.db.execute('DELETE FROM deliveries WHERE message_id IN (SELECT id FROM messages WHERE channel_id=?)', (channel_id,))
@@ -685,6 +686,9 @@ class Room:
             message['can_delete'] = self._can_delete_message(message, viewer_address, managed_local)
             message['reactions'] = []
         placeholders = ','.join('?' for _ in by_id)
+        if managed_local:
+            for row in self.db.execute(f'SELECT DISTINCT message_id FROM cli_activity WHERE message_id IN ({placeholders})', tuple(by_id)):
+                by_id[row['message_id']]['has_cli_activity'] = True
         for reaction in self.db.execute(f"""
             SELECT message_id,kind,COUNT(*) AS count,MAX(CASE WHEN viewer_ip=? THEN 1 ELSE 0 END) AS mine
             FROM message_reactions WHERE message_id IN ({placeholders}) GROUP BY message_id,kind
@@ -718,6 +722,7 @@ class Room:
                                     (message['reply_to'], message['sender']))
                 self.db.execute('UPDATE messages SET reply_to=NULL WHERE reply_to=?', (message_id,))
                 self.db.execute('DELETE FROM message_reactions WHERE message_id=?', (message_id,))
+                self.db.execute('DELETE FROM cli_activity WHERE message_id=?', (message_id,))
                 self.db.execute('DELETE FROM chat_attachments WHERE message_id=?', (message_id,))
                 self.db.execute('DELETE FROM deliveries WHERE message_id=?', (message_id,))
                 self.db.execute('DELETE FROM messages WHERE id=?', (message_id,))
@@ -1178,6 +1183,10 @@ class Handler(BaseHTTPRequestHandler):
                 if language not in LANGUAGES:
                     language = self._saved_language()
                 self._json(self.room.setup(agent_id, self.server.server_port, language, channel_id))
+            elif url.path == '/api/managed/activity':
+                self._check_managed_local()
+                self._json(self.room.managed.activity(channel_id, agent, self._number(params, 'message'),
+                                                       self._number(params, 'after') or 0))
             elif url.path == '/api/participants':
                 self._json({'participants': self.room.participants(channel_id, agent)})
             elif url.path == '/api/participants/icon':

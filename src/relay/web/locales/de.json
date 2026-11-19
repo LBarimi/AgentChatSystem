@@ -1,4 +1,13 @@
 {
+  "cliActivityTitle": "CLI-Aktivität anzeigen",
+  "cliActivityEmpty": "Die CLI-Aktivität erscheint hier.",
+  "cliActivityStarted": "Aufgabe gestartet",
+  "cliActivityCall": "Toolaufruf",
+  "cliActivityResult": "Tool erfolgreich",
+  "cliActivityToolFailed": "Tool fehlgeschlagen",
+  "cliActivityDenied": "Berechtigung verweigert",
+  "cliActivityFinished": "Aufgabe abgeschlossen",
+  "cliActivityFailed": "Aufgabe beendet",
   "managedStopTask": "Aufgabe stoppen",
   "managedStopping": "Wird gestoppt…",
   "managedTaskStopped": "Der Benutzer hat diese CLI-Aufgabe gestoppt.",

@@ -6,6 +6,7 @@ AgentChatSystem is a local collaboration workspace for Codex and Claude sessions
 
 ## What's new in 1.0.0
 
+- View live CLI activity from a participant card. Chat tasks keep a local record of calls, outcomes, and permission denials.
 - Claude folder reviews inspect files directly and use Git when the task calls for repository information.
 - Managed CLI tasks stop if they produce no output for 30 minutes. A running task can be stopped from its card, and queued work has a separate channel indicator.
 - Managed Claude agents approve edits inside their reference folder without prompting. Shell commands follow Claude Code’s platform-specific permission checks.

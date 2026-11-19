@@ -268,6 +268,18 @@ body.resizing-panels, body.resizing-panels * { cursor: col-resize !important; us
 .message-delete { position: absolute; top: calc(100% + 2px); right: 0; z-index: 2; white-space: nowrap; background: var(--paper); }
 .message-reactions, .reaction-options { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
 .message-reactions { margin-top: 5px; }
+.cli-activity { margin-top: 9px; color: var(--muted); font-size: 12px; }
+.cli-activity > summary { width: fit-content; cursor: pointer; color: var(--ink); font-weight: 650; }
+.cli-activity-status { margin: 6px 0; }
+.cli-activity-status:empty { display: none; }
+.cli-activity-list { margin: 6px 0 0; padding: 0 8px; max-height: 240px; overflow: auto; list-style: none; border-radius: 6px; background: var(--surface); }
+.cli-activity-list:empty { display: none; }
+.cli-event { display: flex; gap: 4px 8px; flex-wrap: wrap; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.cli-event:last-child { border-bottom: 0; }
+.cli-event time { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cli-event strong { color: var(--ink); }
+.cli-event[data-kind="cliActivityDenied"] strong, .cli-event[data-kind="cliActivityFailed"] strong { color: var(--danger); }
+.cli-event-detail { min-width: 0; overflow-wrap: anywhere; }
 .message-react { display: flex; }
 .message-react[open] { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .reaction-options { display: inline-flex; vertical-align: middle; }

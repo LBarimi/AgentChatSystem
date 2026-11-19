@@ -21,6 +21,7 @@ SOURCE_FILES = (
     'src/relay/cli.py',
     'src/relay/errors.py',
     'src/relay/guidance.py',
+    'src/relay/cli_activity.py',
     'src/relay/managed_agents.py',
     'src/relay/managed_cli.py',
     'src/relay/managed_options.py',

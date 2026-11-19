@@ -1,4 +1,13 @@
 {
+  "cliActivityTitle": "CLI の活動を表示",
+  "cliActivityEmpty": "CLI の活動がここに表示されます。",
+  "cliActivityStarted": "作業開始",
+  "cliActivityCall": "ツール実行",
+  "cliActivityResult": "ツール完了",
+  "cliActivityToolFailed": "ツール失敗",
+  "cliActivityDenied": "権限を拒否",
+  "cliActivityFinished": "作業完了",
+  "cliActivityFailed": "作業終了",
   "managedStopTask": "作業を停止",
   "managedStopping": "停止中…",
   "managedTaskStopped": "ユーザーがこの CLI 作業を停止しました。",

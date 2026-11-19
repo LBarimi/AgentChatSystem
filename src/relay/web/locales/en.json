@@ -1,4 +1,13 @@
 {
+  "cliActivityTitle": "CLI activity",
+  "cliActivityEmpty": "CLI activity will appear here.",
+  "cliActivityStarted": "Task started",
+  "cliActivityCall": "Tool call",
+  "cliActivityResult": "Tool completed",
+  "cliActivityToolFailed": "Tool failed",
+  "cliActivityDenied": "Permission denied",
+  "cliActivityFinished": "Task completed",
+  "cliActivityFailed": "Task ended",
   "managedStopTask": "Stop task",
   "managedStopping": "Stopping…",
   "managedTaskStopped": "The user stopped this CLI task.",

@@ -438,7 +438,65 @@ function messageReactions(message, openMenus) {
   return footer;
 }
 
-function row(message, participants, openMenus) {
+function cliActivityView(channelId, target) {
+  const view = element("details", "cli-activity");
+  const summary = element("summary", "", t("cliActivityTitle"));
+  summary.dataset.i18n = "cliActivityTitle";
+  const status = element("p", "cli-activity-status");
+  const list = element("ol", "cli-activity-list");
+  view.append(summary, status, list);
+  let cursor = 0, task = null, generation = 0, timer = null;
+  async function refresh(version) {
+    if (!view.open || !view.isConnected || version !== generation) return;
+    let more = false;
+    try {
+      const query = new URLSearchParams({ channel: channelId, ...target, after: cursor });
+      const snapshot = await request("/api/managed/activity?" + query);
+      if (version !== generation || !view.open || !view.isConnected) return;
+      if (task !== snapshot.message_id) {
+        task = snapshot.message_id;
+        cursor = 0;
+        list.replaceChildren();
+      }
+      const atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 20;
+      const clocks = new Intl.DateTimeFormat(document.documentElement.lang, {
+        hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+      });
+      for (const event of snapshot.events) {
+        const entry = element("li", "cli-event");
+        entry.dataset.kind = event.kind;
+        const time = element("time", "", clocks.format(new Date(event.created_at)));
+        time.dateTime = event.created_at;
+        const label = element("strong", "", t(event.kind));
+        label.dataset.i18n = event.kind;
+        entry.append(time, element("span", "cli-event-agent", event.agent), label);
+        if (event.detail) {
+          const detail = element("span", "cli-event-detail", event.kind === "cliActivityFailed" ? t(event.detail) : event.detail);
+          if (event.kind === "cliActivityFailed") detail.dataset.i18n = event.detail;
+          entry.append(detail);
+        }
+        list.append(entry);
+        cursor = event.id;
+      }
+      status.textContent = list.childElementCount ? "" : t("cliActivityEmpty");
+      if (atEnd) list.scrollTop = list.scrollHeight;
+      more = snapshot.events.length === 100;
+    } catch (error) {
+      if (version === generation && view.isConnected && view.open) status.textContent = error.message;
+    }
+    if (version === generation && view.isConnected && view.open) {
+      timer = setTimeout(() => refresh(version), more ? 0 : 1000);
+    }
+  }
+  view.addEventListener("toggle", () => {
+    clearTimeout(timer);
+    const version = ++generation;
+    if (view.open) refresh(version);
+  });
+  return view;
+}
+
+function row(message, participants, openMenus, activityViews) {
   const sender = participants.get(message.sender);
   const user = chatUserIdentity(message, current?.viewer, current?.users || [], t);
   const to = participants.get(message.recipient);
@@ -474,6 +532,11 @@ function row(message, participants, openMenus) {
   content.append(meta);
   if (message.body) content.append(element("p", "message-body", message.body));
   if (message.attachments?.length) content.append(messageAttachments(message.attachments));
+  if (message.has_cli_activity) {
+    const activity = activityViews.get(String(message.id)) || cliActivityView(activeChannel, { message: message.id });
+    activity.dataset.messageActivity = message.id;
+    content.append(activity);
+  }
   content.append(messageReactions(message, openMenus));
   item.append(sender ? participantAvatar(sender) : userAvatar(user.own), content);
   return item;
@@ -543,13 +606,16 @@ function applyRoom(snapshot, repaint = false) {
   showChannelView();
   refreshControls();
 
-  const key = JSON.stringify(snapshot.messages.map(({ id, reply_to, can_delete, reactions }) => [id, reply_to, can_delete, reactions]));
+  const key = JSON.stringify(snapshot.messages.map(({ id, reply_to, can_delete, reactions, has_cli_activity }) =>
+    [id, reply_to, can_delete, reactions, has_cli_activity]));
   if (!repaint && !dirtyUsers && key === messageKey && lastParticipants === participantKey) return;
   const atBottom = scrollRegion.scrollHeight - scrollRegion.scrollTop - scrollRegion.clientHeight < 85;
   messageKey = key;
   const names = new Map([...snapshot.archived_participants, ...snapshot.participants].map((agent) => [agent.id, agent]));
   const openMenus = new Set([...messages.querySelectorAll("details[data-menu-key][open]")].map((menu) => menu.dataset.menuKey));
-  messages.replaceChildren(...snapshot.messages.map((message) => row(message, names, openMenus)));
+  const activityViews = new Map([...messages.querySelectorAll("[data-message-activity]")]
+    .map((view) => [view.dataset.messageActivity, view]));
+  messages.replaceChildren(...snapshot.messages.map((message) => row(message, names, openMenus, activityViews)));
   el("empty").hidden = count > 0;
   showMessage("history-limit", count > snapshot.messages.length ? t("historyLimit") : "");
   if (atBottom) scrollRegion.scrollTop = scrollRegion.scrollHeight;
@@ -1024,6 +1090,7 @@ el("icon-form").addEventListener("submit", async (event) => {
   }
 });
 setupDialog.addEventListener("close", () => {
+  el("setup-cli-activity").replaceChildren();
   clearIconDraft();
   setupRequest++;
   setupDialog.removeAttribute("aria-busy");
@@ -1052,6 +1119,11 @@ function renderSetupPrompts(setup, language) {
     el("setup-title").textContent = name;
     el("setup-install").hidden = true;
     renderManagedSetup(current?.participants.find((agent) => agent.id === setup.id) || setup);
+    const monitor = el("setup-cli-activity");
+    if (current?.managed_local && monitor.dataset.agent !== setup.id) {
+      monitor.dataset.agent = setup.id;
+      monitor.replaceChildren(cliActivityView(activeChannel, { agent: setup.id }));
+    }
     setupDialog.removeAttribute("aria-busy");
     return;
   }
@@ -1107,6 +1179,9 @@ async function openSetup(agentId, refreshOnly = false) {
   setupAgent = setup.id;
   if (!refreshOnly) {
     showMessage("setup-managed-error", "");
+    const monitor = el("setup-cli-activity");
+    monitor.dataset.agent = "";
+    monitor.replaceChildren();
     initializeIconEditor(setup);
     el("agent-name").value = setup.name;
     showMessage("rename-error", "");

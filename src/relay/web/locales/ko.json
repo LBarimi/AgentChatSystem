@@ -1,4 +1,13 @@
 {
+  "cliActivityTitle": "CLI 활동 보기",
+  "cliActivityEmpty": "CLI 활동이 여기에 표시됩니다.",
+  "cliActivityStarted": "작업 시작",
+  "cliActivityCall": "도구 호출",
+  "cliActivityResult": "도구 완료",
+  "cliActivityToolFailed": "도구 실패",
+  "cliActivityDenied": "권한 거부",
+  "cliActivityFinished": "작업 완료",
+  "cliActivityFailed": "작업 종료",
   "managedStopTask": "작업 중지",
   "managedStopping": "중지 중…",
   "managedTaskStopped": "사용자가 이 CLI 작업을 중지했습니다.",

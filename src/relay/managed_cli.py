@@ -7,6 +7,7 @@ import re
 import signal
 import subprocess
 from tempfile import TemporaryFile
+from threading import Thread
 from time import monotonic
 from uuid import UUID
 
@@ -221,16 +222,19 @@ def claude_quota(info):
 
 
 class Turn:
-    def __init__(self, args, cwd, *, stream=False):
+    def __init__(self, args, cwd, *, stream=False, observer=None):
         self.output = None if stream else TemporaryFile()
         self.error_output = None
         self.guard = None
+        self.reader = None
+        self.capture_failed = False
+        self.stopped = False
         try:
             self.error_output = TemporaryFile()
             self.guard = WindowsJob() if os.name == 'nt' else None
             self.process = subprocess.Popen(
                 args, cwd=Path(cwd) if cwd else None, stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE if stream else self.output,
+                stdout=subprocess.PIPE if stream or observer else self.output,
                 stderr=self.error_output, encoding='utf-8', errors='replace',
                 start_new_session=os.name != 'nt',
                 creationflags=(subprocess.CREATE_NO_WINDOW | 0x04) if self.guard else 0,  # CREATE_SUSPENDED
@@ -242,6 +246,10 @@ class Turn:
                     self.process.kill()
                     self.process.communicate()
                     raise
+            if observer:
+                source, self.process.stdout = self.process.stdout, None
+                self.reader = Thread(target=self._capture_output, args=(source, observer), daemon=True)
+                self.reader.start()
         except BaseException:
             if self.guard:
                 self.guard.close()
@@ -250,7 +258,19 @@ class Turn:
             if self.output:
                 self.output.close()
             raise
-        self.stopped = False
+
+    def _capture_output(self, source, observer):
+        oversized = False
+        try:
+            with source:
+                while line := source.readline(MAX_EVENT_BYTES + 1):
+                    self.output.write(line.encode('utf-8', 'replace'))
+                    self.output.flush()
+                    if not oversized and len(line) <= MAX_EVENT_BYTES:
+                        observer(line)
+                    oversized = not line.endswith('\n')
+        except OSError:
+            self.capture_failed = True
 
     def stop(self):
         # Called under the room lock, including after a successful turn.
@@ -281,9 +301,20 @@ class Turn:
             self.process.communicate(prompt, timeout=timeout)
         else:
             self._wait_for_output(prompt, timeout, idle_timeout)
+        self._finish_capture()
         self.output.seek(0)
         diagnostics = self._diagnostics()
         return result(role, self._output_lines(), failed=bool(self.process.returncode), diagnostics=diagnostics)
+
+    def _finish_capture(self):
+        if not self.reader:
+            return
+        self.reader.join(timeout=2)
+        if self.reader.is_alive():
+            self.stop()
+            self.reader.join(timeout=2)
+        if self.reader.is_alive() or self.capture_failed:
+            raise CliError('Could not collect CLI output')
 
     def _wait_for_output(self, prompt, timeout, idle_timeout):
         started = monotonic()
@@ -328,6 +359,8 @@ class Turn:
             self.process.kill()
             self.process.wait(timeout=2)
         finally:
+            if self.reader:
+                self.reader.join(timeout=2)
             self.process.stdin.close()
             if self.process.stdout:
                 self.process.stdout.close()

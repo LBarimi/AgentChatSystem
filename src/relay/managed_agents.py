@@ -1,9 +1,10 @@
 """ACS-owned conversations and their delivery workers."""
 from datetime import datetime, timezone
 import json
-from functools import lru_cache
+from functools import lru_cache, partial
 from importlib.resources import files
 from pathlib import Path
+from sqlite3 import Error as SQLiteError
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -12,6 +13,7 @@ from time import monotonic, time
 
 from relay.errors import ApiError
 from relay import managed_cli
+from relay.cli_activity import CliActivity
 from relay.managed_options import ROLES, ModelOptions, claude_model_label, codex_quota, folder_path
 from relay.settings import PROJECT
 
@@ -64,6 +66,17 @@ class ManagedAgents:
                 error TEXT
             );
             CREATE INDEX IF NOT EXISTS managed_parent ON managed_agents(parent_id);
+            CREATE TABLE IF NOT EXISTS cli_activity (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                message_id INTEGER NOT NULL REFERENCES messages(id),
+                agent_id TEXT NOT NULL REFERENCES participants(id),
+                kind TEXT NOT NULL,
+                detail TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+            );
+            CREATE INDEX IF NOT EXISTS cli_activity_message ON cli_activity(message_id, id);
+            CREATE INDEX IF NOT EXISTS cli_activity_agent ON cli_activity(agent_id, id);
         """)
         if 'model_label' not in {row['name'] for row in self.db.execute('PRAGMA table_info(managed_agents)')}:
             self.db.execute("ALTER TABLE managed_agents ADD COLUMN model_label TEXT NOT NULL DEFAULT ''")
@@ -82,6 +95,49 @@ class ManagedAgents:
             SELECT a.*,p.role,p.name,p.channel_id FROM managed_agents a
             JOIN participants p ON a.id=p.id WHERE a.id=? AND p.removed_at IS NULL
         """, (agent_id,)).fetchone()
+
+    def record_activity(self, agent_id, message_id, kind, detail=''):
+        with self.room.changed:
+            if not self.closed:
+                try:
+                    with self.db:
+                        self.db.execute("""
+                            INSERT INTO cli_activity(channel_id,message_id,agent_id,kind,detail)
+                            SELECT p.channel_id,m.id,p.id,?,? FROM managed_agents a JOIN participants p ON p.id=a.id
+                            JOIN messages m ON m.id=a.active_message AND m.channel_id=p.channel_id
+                            WHERE a.id=? AND m.id=? AND p.removed_at IS NULL
+                        """, (kind, detail, agent_id, message_id))
+                except SQLiteError as error:
+                    print(f'Could not save CLI activity for message {message_id}: {type(error).__name__}',
+                          file=sys.stderr, flush=True)
+
+    def activity(self, channel_id, agent_id, message_id, after):
+        if not 0 <= after <= 2**63 - 1 or (message_id is not None and not 1 <= message_id <= 2**63 - 1):
+            raise ApiError('Select a valid CLI task.', key='errorChatMessageMissing')
+        with self.room.changed:
+            if agent_id:
+                agent = self.get(agent_id)
+                if not agent or agent['channel_id'] != channel_id:
+                    raise ApiError('This CLI agent is unavailable.', 404, key='errorAgentMissing')
+                if message_id is None:
+                    recent = self.db.execute(
+                        'SELECT message_id FROM cli_activity WHERE agent_id=? AND channel_id=? ORDER BY id DESC LIMIT 1',
+                        (agent_id, channel_id),
+                    ).fetchone()
+                    message_id = recent['message_id'] if recent else None
+            elif message_id is None:
+                raise ApiError('Select a CLI task.', key='errorChatMessageMissing')
+            if message_id is not None and not self.db.execute(
+                'SELECT 1 FROM messages WHERE id=? AND channel_id=?', (message_id, channel_id),
+            ).fetchone():
+                raise ApiError('This CLI task is unavailable.', 404, key='errorChatMessageMissing')
+            events = self.db.execute("""
+                SELECT a.id, a.kind, a.detail, a.created_at, p.name AS agent
+                FROM cli_activity a JOIN participants p ON p.id=a.agent_id
+                WHERE a.message_id=? AND a.channel_id=? AND (? IS NULL OR a.agent_id=?) AND a.id>?
+                ORDER BY a.id LIMIT 100
+            """, (message_id, channel_id, agent_id, agent_id, after))
+            return {'message_id': message_id, 'events': [dict(row) for row in events]}
 
     def _startup_agent(self, agent_id, channel_id):
         agent = self.get(agent_id) if isinstance(agent_id, str) else None
@@ -271,6 +327,7 @@ class ManagedAgents:
             with self.room.changed:
                 agent = self.get(agent_id)
                 if agent and agent['active_message'] is not None:
+                    self.record_activity(agent_id, agent['active_message'], 'cliActivityFailed', 'managedInterrupted')
                     self._finish(agent, agent['active_message'], failure='managedInterrupted')
             while True:
                 with self.room.changed:
@@ -365,6 +422,12 @@ class ManagedAgents:
                     return
                 if message and not self.db.execute('SELECT 1 FROM messages WHERE id=?', (message_id,)).fetchone():
                     return
+                observer = None
+                if message:
+                    publish = partial(self.record_activity, agent_id, message_id)
+                    publish('cliActivityStarted')
+                    self.room._notify()
+                    observer = CliActivity(agent['role'], publish)
                 prompt, children = self._prompt(agent, message)
                 program = managed_cli.executable(agent['role'])
                 if not program:
@@ -380,7 +443,8 @@ class ManagedAgents:
                     if attachment_prompt:
                         attachments = Path(scratch.name)
                     prompt += attachment_prompt
-                turn = managed_cli.Turn(managed_cli.command(program, agent, schema, attachments=attachments), agent['cwd'])
+                turn = managed_cli.Turn(managed_cli.command(program, agent, schema, attachments=attachments),
+                                        agent['cwd'], observer=observer)
                 self.processes[agent_id] = turn
             timeout = TASK_TIMEOUT_SECONDS if message else STARTUP_TIMEOUT_SECONDS
             session, body, model, quota = turn.run(
@@ -413,14 +477,23 @@ class ManagedAgents:
         except (OSError, ValueError, TypeError, KeyError):
             pass
         finally:
+            if turn:
+                with self.room.changed:
+                    turn.stop()
+                try:
+                    turn.reap()
+                except (OSError, subprocess.TimeoutExpired):
+                    pass
             with self.room.changed:
                 if (agent_id, message_id) in self.stopping:
                     self.stopping.discard((agent_id, message_id))
                     response, failure = None, 'managedTaskStopped'
                 if turn:
-                    turn.stop()
                     self.processes.pop(agent_id, None)
                 if not self.closed and self.get(agent_id):
+                    if message:
+                        kind = 'cliActivityFinished' if response else 'cliActivityFailed'
+                        self.record_activity(agent_id, message_id, kind, '' if response else failure)
                     self._finish(agent, message_id, response, failure=None if response else failure)
                     if not response and failure != 'managedTaskStopped' and (
                         message is None or self.db.execute('SELECT 1 FROM messages WHERE id=?', (message_id,)).fetchone()
@@ -428,12 +501,8 @@ class ManagedAgents:
                         now = datetime.now(timezone.utc).isoformat(timespec='seconds')
                         print(f'{now} CLI {agent_id} message={message_id} {failure} after {monotonic() - started:.1f}s',
                               file=sys.stderr, flush=True)
-            try:
-                if turn:
-                    turn.reap()
-            finally:
-                if scratch:
-                    scratch.cleanup()
+            if scratch:
+                scratch.cleanup()
 
     def _finish(self, agent, message_id, response=None, *, failure=None):
         labels = catalog(agent['language'])
