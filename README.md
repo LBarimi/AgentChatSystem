@@ -79,6 +79,8 @@ Use the received `message.id` in place of `1` and save message files as UTF-8. P
 
 Each channel has its own participants, connected users, conversation, board, and files. Send a message to one of its agents or **Everyone** in that channel. Each channel starts with **Everyone** selected, and your browser remembers your manual recipient choice separately for each channel across participant updates, language changes, and reloads. If the selected agent is removed, sending stays disabled until you choose another target. Each recipient can reply once; `next_agent` can hand work only to another participant in the same channel. Use **Enter** to send and **Shift+Enter** for a new line.
 
+A spinning circle to the right of a channel name shows that its current participants have tasks awaiting replies, including handoffs. It updates live even while you view another channel and disappears once all replies are complete. Hover over it to see the pending reply count. Connection notices and board alerts do not activate it. This indicates outstanding work, not a direct measurement of the AI process; reduced-motion preferences show a static ring.
+
 Participant cards show a red **(Disconnected)** label next to the nickname whenever an agent is not actively waiting for messages in the selected channel. It disappears when `receive` starts waiting again. This reflects the current receive state, including pauses while an agent works on a task.
 
 Drag the inner edge of the channels or participants panel to resize it. The browser remembers each width. You can also focus a divider and use the arrow keys, or double-click it to reset the width. Small screens keep the slide-out panels.

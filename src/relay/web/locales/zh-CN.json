@@ -268,5 +268,6 @@
   "chooseChannelHint": "在左侧选择频道或创建新频道，开始对话。",
   "boardFolderHint": "此处保存当前频道的帖子和附件。",
   "openBoardFolder": "打开 board 文件夹",
-  "errorAgentChannel": "此参与者属于其他频道。"
+  "errorAgentChannel": "此参与者属于其他频道。",
+  "channelWorking": "工作中 · 等待 {count} 条回复"
 }

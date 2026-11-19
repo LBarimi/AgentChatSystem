@@ -299,7 +299,12 @@ class Room:
 
     def channels(self):
         with self.changed:
-            return [self.storage.describe(row) for row in self.db.execute('SELECT * FROM channels ORDER BY rowid')]
+            pending = dict(self.db.execute(f'''SELECT m.channel_id, COUNT(*) {PENDING_MESSAGES}
+                AND EXISTS (SELECT 1 FROM participants p WHERE p.id=d.agent_id
+                            AND p.channel_id=m.channel_id AND p.removed_at IS NULL)
+                GROUP BY m.channel_id'''))
+            return [self.storage.describe(row) | {'pending': pending.get(row['id'], 0)}
+                    for row in self.db.execute('SELECT * FROM channels ORDER BY rowid')]
 
     def create_channel(self, payload):
         name = self._name(payload.get('name'), '채널 이름', 'errorChannelName')

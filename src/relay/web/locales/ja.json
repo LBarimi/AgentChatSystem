@@ -268,5 +268,6 @@
   "chooseChannelHint": "左側でチャンネルを選択するか、新しいチャンネルを作成して会話を始めてください。",
   "boardFolderHint": "このチャンネルの投稿と添付ファイルを保存します。",
   "openBoardFolder": "board フォルダーを開く",
-  "errorAgentChannel": "別のチャンネルの参加者です。"
+  "errorAgentChannel": "別のチャンネルの参加者です。",
+  "channelWorking": "作業中 · 返信待ち {count}件"
 }

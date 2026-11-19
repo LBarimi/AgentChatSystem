@@ -268,5 +268,6 @@
   "chooseChannelHint": "在左側選擇頻道或建立新頻道，開始對話。",
   "boardFolderHint": "此處儲存目前頻道的貼文及附件。",
   "openBoardFolder": "開啟 board 資料夾",
-  "errorAgentChannel": "此參與者屬於其他頻道。"
+  "errorAgentChannel": "此參與者屬於其他頻道。",
+  "channelWorking": "工作中 · 等待 {count} 則回覆"
 }

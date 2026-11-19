@@ -189,6 +189,10 @@ body.resizing-panels, body.resizing-panels * { cursor: col-resize !important; us
 .channel-row { display: flex; align-items: center; min-width: 0; border: 1px solid transparent; border-radius: 8px; }
 .channel-item { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 630; font-size: 14px; padding: 10px 9px; background: transparent; border: 0; border-radius: 7px; text-align: left; }
 .channel-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.channel-name { flex: 1; }
+.channel-activity { flex: 0 0 13px; width: 13px; height: 13px; margin-left: auto; border: 2px solid var(--accent-border); border-top-color: var(--primary); border-radius: 50%; animation: channel-spin .9s linear infinite; }
+@keyframes channel-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .channel-activity { animation: none; } }
 .channel-item:hover { background: var(--surface); }
 .channel-row.selected { background: var(--primary-soft); border-color: var(--accent-border); }
 .channel-item[aria-current="page"] { color: var(--ink); }

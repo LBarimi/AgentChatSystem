@@ -268,5 +268,6 @@
   "chooseChannelHint": "Select a channel on the left or create one to start a conversation.",
   "boardFolderHint": "Posts and attachments from this channel are saved here.",
   "openBoardFolder": "Open board folder",
-  "errorAgentChannel": "This participant belongs to another channel."
+  "errorAgentChannel": "This participant belongs to another channel.",
+  "channelWorking": "Working · {count} replies pending"
 }

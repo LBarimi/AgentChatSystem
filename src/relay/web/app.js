@@ -157,7 +157,15 @@ function showChannels() {
     button.type = "button";
     button.dataset.channel = channel.id;
     if (channel.id === activeChannel) button.setAttribute("aria-current", "page");
-    button.append(icon("hash"), element("span", "", channelName(channel)));
+    button.append(icon("hash"), element("span", "channel-name", channelName(channel)));
+    if (channel.pending > 0) {
+      const activity = element("span", "channel-activity");
+      const status = t("channelWorking", { count: channel.pending });
+      activity.title = status;
+      activity.setAttribute("aria-hidden", "true");
+      button.setAttribute("aria-label", channelName(channel) + " · " + status);
+      button.append(activity);
+    }
     const more = element("button", "channel-more", "⋮");
     more.type = "button";
     more.dataset.channelMenu = channel.id;

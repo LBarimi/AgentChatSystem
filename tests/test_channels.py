@@ -44,6 +44,37 @@ class ChannelManagement(unittest.TestCase):
         self.assertEqual(default['name'], 'My workspace')
         self.assertFalse(default['default_name'])
 
+    def test_activity_counts_unanswered_recipients_and_handoffs_across_channels(self):
+        other = self.room.create_channel({'name': 'Other'})['id']
+        own = self.room.post({'sender': 'user', 'recipient': 'all', 'body': 'Work', 'channel_id': 'general'})['message']
+        theirs = self.post(other)
+        def counts():
+            return {channel['id']: channel['pending'] for channel in self.room.snapshot(None)['channels']}
+        self.assertEqual(counts(), {'general': 2, other: 1})
+        self.room.post({'sender': 'codex', 'reply_to': own['id'], 'body': 'Done'})
+        self.assertEqual(counts()['general'], 1)
+        handoff = self.room.post({'sender': 'claude', 'reply_to': own['id'], 'body': 'Please review', 'next_agent': 'codex'})['message']
+        self.assertEqual(counts()['general'], 1)
+        self.room.post({'sender': 'codex', 'reply_to': handoff['id'], 'body': 'Reviewed'})
+        self.assertEqual(counts(), {'general': 0, other: 1})
+        self.room.db.close()
+        self.room = Room(self.root / 'room.sqlite3')
+        self.assertEqual(counts(), {'general': 0, other: 1})
+        self.room.post({'sender': theirs['recipient'], 'reply_to': theirs['id'], 'body': 'Finished'})
+        self.assertEqual(counts(), {'general': 0, other: 0})
+
+    def test_activity_ignores_notices_boards_and_removed_participants_and_clears_with_chat(self):
+        self.room.announce_connection({'agent': 'codex', 'request_id': str(uuid4()), 'language': 'ko'})
+        self.room.publish_board_post({'request_id': str(uuid4()), 'title': 'Instructions', 'body': 'For later'})
+        self.assertEqual(self.room.channels()[0]['pending'], 0)
+        self.post('general')
+        self.room.remove_participant('codex')
+        self.assertEqual(self.room.channels()[0]['pending'], 0)
+        self.post('general')
+        self.assertEqual(self.room.channels()[0]['pending'], 1)
+        self.room.clear_channel('general')
+        self.assertEqual(self.room.channels()[0]['pending'], 0)
+
     def test_invalid_or_duplicate_names_do_not_modify_channel(self):
         channel = self.room.create_channel({'name': 'Review'})
         for name in ('', 'x' * 33, 'reVIEW'):

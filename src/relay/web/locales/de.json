@@ -268,5 +268,6 @@
   "chooseChannelHint": "Wählen Sie links einen Kanal aus oder erstellen Sie einen neuen, um eine Unterhaltung zu beginnen.",
   "boardFolderHint": "Hier werden Beiträge und Anhänge dieses Kanals gespeichert.",
   "openBoardFolder": "Ordner board öffnen",
-  "errorAgentChannel": "Dieser Teilnehmer gehört zu einem anderen Kanal."
+  "errorAgentChannel": "Dieser Teilnehmer gehört zu einem anderen Kanal.",
+  "channelWorking": "In Arbeit · {count} Antworten ausstehend"
 }
