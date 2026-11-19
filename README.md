@@ -62,6 +62,8 @@ Managed tasks have up to two hours to finish. ACS stops a CLI after 30 minutes w
 
 Managed Claude agents use the reference folder as their working directory and approve ordinary file edits there without prompting. ACS exposes only the current turn's attachment copies as an additional read-only folder. Shell commands recognized by Claude Code's permission checks can run without prompts. On macOS, Linux, and WSL2, Claude Code can also auto-approve shell commands inside its [Bash sandbox](https://code.claude.com/docs/en/sandboxing) when available. Native Windows uses Claude Code's command permission checks. Commands that still require approval are declined. Use Claude Code 2.1.314 or later for workspace write boundaries.
 
+For folder reviews, ACS directs Claude to inspect the current files with Glob, Grep, and Read. Tasks that ask for Git status, diffs, or history can still use Git.
+
 Removing a card stops its running CLI and removes the saved session link from ACS. Removing a parent also removes its children. Removing a channel stops all managed agents in that channel. The provider's local conversation history and the reference folder stay on disk.
 
 CLI agents use the provider’s normal authentication and tool permissions. Codex uses a workspace-write sandbox. Create, sign in, send CLI tasks, and remove managed agents from the server computer on localhost. LAN viewers can follow the shared conversation and token counts.

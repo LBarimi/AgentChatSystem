@@ -133,6 +133,27 @@ class ManagedAgentsTest(unittest.TestCase):
         self.assertEqual({item['id']: item['is_manager'] for item in snapshot['archived_participants']},
                          {parent: 1, child: 0})
 
+    def test_claude_folder_reviews_are_directed_to_file_tools(self):
+        prompts = []
+
+        class CapturingTurn(FakeTurn):
+            def read(self, prompt, timeout):
+                if '--print' in self.args and 'Inspect this folder' in prompt:
+                    prompts.append(prompt)
+                return super().read(prompt, timeout)
+
+        with patch.object(managed_cli, 'Turn', CapturingTurn):
+            parent = self.create('codex', 'Coordinator')
+            self.ready(parent)
+            child = self.create('claude', 'Reviewer', parent)
+            self.ready(child)
+            task = self.task('Inspect this folder', child)
+            self.until(lambda: self.room.snapshot(self.channel)['messages'][-1]['reply_to'] == task['id'])
+            self.assertEqual(len(prompts), 1)
+            self.assertIn('Glob and Grep', prompts[0])
+            self.assertIn('read relevant current files with Read', prompts[0])
+            self.assertIn('Use Git only when the task asks', prompts[0])
+
     def test_stop_only_cancels_the_selected_task_and_preserves_the_session(self):
         parent = self.create('codex', 'Coordinator')
         self.ready(parent)

@@ -308,6 +308,12 @@ class ManagedAgents:
             'remaining work you can do and report the blocker in your final reply. Do not wait for an answer '
             'or repeat a denied action. Do not retry a task a user has stopped.'
         )
+        if agent['role'] == 'claude':
+            instructions += (
+                ' For folder inspection, list and search the reference folder with Glob and Grep, '
+                'then read relevant current files with Read. Use Git only when the task asks for changes '
+                'relative to Git, history, branches, or another repository-specific operation.'
+            )
         if agent['parent_id'] is None:
             cursor = message
             depth = 0
