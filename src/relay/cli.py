@@ -186,7 +186,8 @@ def connection_setup(port, agent_id, role, *, language='en'):
     if port != configured_port:
         args.extend(['--port', str(port)])
     args.extend(['mcp', '--agent', agent_id])
-    server = 'local_chat' if agent_id == role else 'relay_' + agent_id.replace('-', '_')
+    server = 'acs_' + agent_id.replace('-', '_')
+    legacy_server = 'local_chat' if agent_id == role else 'relay_' + agent_id.replace('-', '_')
     if role == 'codex':
         snippet = '\n'.join([
             f'[mcp_servers.{server}]',
@@ -207,6 +208,7 @@ def connection_setup(port, agent_id, role, *, language='en'):
         'app': APP_NAME,
         'agent': agent_id,
         'server': server,
+        'legacy_server': legacy_server,
         'config_path': str(config_path),
         'configuration': f'```{config_format}\n{snippet}\n```',
         'launch_spec': '```json\n' + json.dumps({'command': exe, 'args': args}, ensure_ascii=False, indent=2) + '\n```',

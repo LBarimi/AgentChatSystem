@@ -27,6 +27,7 @@ class SetupPrompts(unittest.TestCase):
             for role in ('codex', 'claude'):
                 with self.subTest(language=language, role=role), patch('relay.cli.Settings.port', return_value=9081):
                     setup = connection_setup(9092, role + '-2', role, language=language)
+                    self.assertEqual(setup['server'], 'acs_' + role + '_2')
                     prompt = setup['install_prompt']
                     blocks = [json.loads(block) for block in re.findall(r'```json\n(.*?)\n```', prompt, re.S)]
                     commands = [block for block in blocks if isinstance(block, list)]
@@ -136,8 +137,36 @@ class SetupPrompts(unittest.TestCase):
                 self.assertEqual(cli.main(), 0)
                 self.assertIn(prompt_catalog(language)['config_codex'] + ':', output.getvalue())
                 self.assertIn(prompt_catalog(language)['config_claude'] + ':', output.getvalue())
-                self.assertIn('[mcp_servers.local_chat]', output.getvalue())
+                self.assertIn('[mcp_servers.acs_codex]', output.getvalue())
+                self.assertIn('"acs_claude"', output.getvalue())
                 self.assertIn('"mcpServers"', output.getvalue())
+
+    def test_acs_names_match_config_commands_and_prompts_for_default_and_numbered_agents(self):
+        cases = [
+            ('codex', 'codex', 'acs_codex', 'local_chat'),
+            ('claude', 'claude', 'acs_claude', 'local_chat'),
+            ('codex', 'codex-2', 'acs_codex_2', 'relay_codex_2'),
+            ('claude', 'claude-2', 'acs_claude_2', 'relay_claude_2'),
+            ('codex', 'codex-12', 'acs_codex_12', 'relay_codex_12'),
+            ('claude', 'claude-12', 'acs_claude_12', 'relay_claude_12'),
+        ]
+        for language in LANGUAGES:
+            for role, agent, server, legacy in cases:
+                with self.subTest(language=language, agent=agent):
+                    setup = connection_setup(9081, agent, role, language=language)
+                    self.assertEqual(setup['server'], server)
+                    self.assertIn(server, setup['prompt'])
+                    self.assertNotIn(legacy, setup['prompt'])
+                    self.assertIn(legacy, setup['install_prompt'])
+                    commands = [json.loads(block) for block in re.findall(r'```json\n(.*?)\n```', setup['install_prompt'], re.S)]
+                    register, inspect = [command for command in commands if isinstance(command, list)]
+                    self.assertEqual(inspect[3], server)
+                    self.assertEqual(register[register.index('--') - 1], server)
+                    self.assertEqual(register[-2:], ['--agent', agent])
+                    if role == 'codex':
+                        self.assertTrue(setup['config'].startswith('[mcp_servers.' + server + ']\n'))
+                    else:
+                        self.assertEqual(list(json.loads(setup['config'])['mcpServers']), [server])
 
     def test_unrecognized_language_falls_back_to_english_without_changing_configuration(self):
         for role in ('codex', 'claude'):
@@ -159,6 +188,7 @@ class SetupConnectionCheck(unittest.TestCase):
                 saved = cli.Client(self.port).call('/api/setup?agent=' + role)
                 explicit = cli.Client(self.port).call('/api/setup?agent=' + role + '&lang=en')
                 self.assertEqual(saved['language'], language)
+                self.assertEqual(saved['server'], 'acs_' + role)
                 self.assertEqual(explicit['language'], 'en')
                 self.assertEqual(saved['config'], explicit['config'])
                 self.assertEqual(self.server.settings.language(), language)
